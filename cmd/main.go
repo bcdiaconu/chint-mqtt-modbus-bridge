@@ -368,7 +368,18 @@ func (app *Application) publishDiscoveryConfigs(ctx context.Context) error {
 		results = append(results, result)
 	}
 
-	return app.publisher.PublishAllDiscoveries(ctx, results)
+	// Publish sensor discoveries
+	if err := app.publisher.PublishAllDiscoveries(ctx, results); err != nil {
+		return err
+	}
+
+	// Publish diagnostic sensor discovery
+	if err := app.publisher.PublishDiagnosticDiscovery(ctx); err != nil {
+		log.Printf("⚠️ Error publishing diagnostic discovery: %v", err)
+		// Don't return error - this is not critical
+	}
+
+	return nil
 }
 
 func main() {

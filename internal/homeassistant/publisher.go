@@ -239,6 +239,55 @@ func (p *Publisher) PublishStatusOffline(ctx context.Context) error {
 	return p.PublishStatus(ctx, "offline")
 }
 
+// PublishDiagnosticDiscovery publishes discovery configuration for diagnostic sensor
+func (p *Publisher) PublishDiagnosticDiscovery(ctx context.Context) error {
+	if !p.client.IsConnected() {
+		return fmt.Errorf("publisher is not connected")
+	}
+
+	// Topic for diagnostic sensor discovery
+	discoveryTopic := fmt.Sprintf("%s/sensor/%s_diagnostic/config",
+		p.config.DiscoveryPrefix, p.config.DeviceID)
+
+	// Configuration for the diagnostic sensor
+	config := SensorConfig{
+		Name:              "Diagnostic",
+		UniqueID:          fmt.Sprintf("%s_diagnostic", p.config.DeviceID),
+		StateTopic:        p.config.DiagnosticTopic,
+		UnitOfMeasurement: "",
+		DeviceClass:       "enum",
+		StateClass:        "",
+		Device: DeviceInfo{
+			Name:         p.config.DeviceName,
+			Identifiers:  []string{p.config.DeviceID},
+			Manufacturer: p.config.Manufacturer,
+			Model:        p.config.Model,
+		},
+		ValueTemplate:       "{{ value_json.message }}",
+		AvailabilityTopic:   p.config.StatusTopic,
+		PayloadAvailable:    "online",
+		PayloadNotAvailable: "offline",
+		JSONAttributesTemplate: "{{ value_json | tojson }}",
+		EntityCategory:      "diagnostic",
+	}
+
+	// Serialize configuration
+	configJSON, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("error serializing diagnostic configuration: %w", err)
+	}
+
+	log.Printf("📡 Publishing diagnostic discovery: %s", discoveryTopic)
+
+	// Publish configuration
+	token := p.client.Publish(discoveryTopic, 0, true, configJSON)
+	if token.Wait() && token.Error() != nil {
+		return fmt.Errorf("error publishing diagnostic discovery: %w", token.Error())
+	}
+
+	return nil
+}
+
 // SensorConfig configuration for a Home Assistant sensor
 type SensorConfig struct {
 	Name                string     `json:"name"`
@@ -252,6 +301,8 @@ type SensorConfig struct {
 	AvailabilityTopic   string     `json:"availability_topic"`
 	PayloadAvailable    string     `json:"payload_available"`
 	PayloadNotAvailable string     `json:"payload_not_available"`
+	JSONAttributesTemplate string  `json:"json_attributes_template,omitempty"`
+	EntityCategory      string     `json:"entity_category,omitempty"`
 }
 
 // DeviceInfo information about the device

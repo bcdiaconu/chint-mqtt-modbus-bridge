@@ -132,6 +132,8 @@ The application logs all operations:
 
 The bridge automatically publishes sensors in Home Assistant through MQTT Discovery:
 
+### Energy Sensors
+
 ```yaml
 # Sensor automatically created in Home Assistant
 sensor:
@@ -141,7 +143,32 @@ sensor:
     unit_of_measurement: "V"
     device_class: "voltage"
     value_template: "{{ value_json.value }}"
+    availability_topic: "modbus-bridge/status"
+    payload_available: "online"
+    payload_not_available: "offline"
 ```
+
+### Diagnostic and Status Monitoring
+
+The bridge also creates a diagnostic sensor that appears in the Home Assistant logbook:
+
+- **Diagnostic Sensor**: Shows error codes and human-readable messages (hidden by default, can be enabled manually)
+- **Availability Status**: All sensors show as "unavailable" when the gateway is offline  
+- **Logbook Integration**: Status changes and errors are logged with timestamps
+
+The diagnostic sensor is configured with `entity_category: "diagnostic"`, which means it won't appear in the main interface but can be found in the device settings and enabled if needed.
+
+**Diagnostic Messages Include:**
+
+- Gateway connection status
+- Modbus communication errors
+- Configuration errors
+- Recovery notifications
+
+**MQTT Topics:**
+
+- Status: `modbus-bridge/status` (online/offline)
+- Diagnostic: `modbus-bridge/diagnostic` (error codes with timestamps)
 
 ## Development
 
