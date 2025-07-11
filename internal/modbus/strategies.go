@@ -216,7 +216,8 @@ func (s *PowerFactorStrategy) ParseData(rawData []byte) (float64, error) {
 	bits := binary.BigEndian.Uint32(rawData[:4])
 	value := math.Float32frombits(bits)
 
-	return float64(value), nil
+	// Always return absolute value for power factor
+	return math.Abs(float64(value)), nil
 }
 
 // ReactivePowerStrategy strategy for calculating reactive power
