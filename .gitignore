@@ -1,0 +1,37 @@
+# Binaries
+mqtt-modbus-bridge
+*.exe
+*.exe~
+*.out
+*.test
+
+# Build directories
+/build/
+/bin/
+/dist/
+
+# Dependency directories
+/vendor/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.bak
+
+# Logs
+*.log
+
+# Configs (user-specific, not sample)
+config.yaml
+
+# Test output
+coverage.out
+
+# Go modules cache
+.gomodcache/

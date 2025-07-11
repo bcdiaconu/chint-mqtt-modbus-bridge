@@ -1,0 +1,125 @@
+# MQTT-Modbus Bridge Configuration
+# Configuration for bridge between USR-DR164 and Home Assistant
+
+# MQTT Broker Configuration
+mqtt:
+  broker: "localhost"
+  port: 1883
+  username: "mqtt"
+  password: "mqtt_password"
+  client_id: "modbus-bridge"
+  
+  # USR-DR164 Gateway
+  gateway:
+    mac: "D4AD20B75646"
+    cmd_topic: "D4AD20B75646/cmd"
+    data_topic: "D4AD20B75646/data"
+
+# Home Assistant MQTT Discovery Configuration
+homeassistant:
+  discovery_prefix: "homeassistant"
+  device_name: "Energy Meter"
+  device_id: "energy_meter_001"
+  manufacturer: "Generic"
+  model: "Modbus Energy Meter"
+  
+  # Device status and diagnostics topics
+  status_topic: "modbus-bridge/status"          # online/offline status
+  diagnostic_topic: "modbus-bridge/diagnostic"  # error codes/messages
+
+# Modbus Device Configuration
+modbus:
+  slave_id: 11
+  poll_interval: 1000       # milliseconds between register set readings
+  register_delay: 100       # milliseconds between register reads
+  energy_delay: 1000        # milliseconds between energy register reads (kWh meters)
+  timeout: 5                # timeout for responses
+
+# Modbus Registers with Strategy Pattern
+registers:
+  voltage:
+    name: "Voltage"
+    address: 0x2000
+    unit: "V"
+    device_class: "voltage"
+    state_class: "measurement"
+    ha_topic: "sensor/energy_meter/voltage"
+    
+  frequency:
+    name: "Frequency"
+    address: 0x2020
+    unit: "Hz"
+    device_class: "frequency"
+    state_class: "measurement"
+    ha_topic: "sensor/energy_meter/frequency"
+    
+  current:
+    name: "Current"
+    address: 0x2002
+    unit: "A"
+    device_class: "current"
+    state_class: "measurement"
+    ha_topic: "sensor/energy_meter/current"
+    
+  energy_total:
+    name: "Active Energy"
+    address: 0x4000
+    unit: "kWh"
+    device_class: "energy"
+    state_class: "total_increasing"
+    ha_topic: "sensor/energy_meter/energy_total"
+    
+  energy_imported:
+    name: "Imported Energy"
+    address: 0x400A
+    unit: "kWh"
+    device_class: "energy"
+    state_class: "total_increasing"
+    ha_topic: "sensor/energy_meter/energy_imported"
+    
+  energy_exported:
+    name: "Exported Energy"
+    address: 0x4014
+    unit: "kWh"
+    device_class: "energy"
+    state_class: "total_increasing"
+    ha_topic: "sensor/energy_meter/energy_exported"
+    
+  power_factor:
+    name: "Power Factor"
+    address: 0x2018
+    unit: ""
+    device_class: "power_factor"
+    state_class: "measurement"
+    ha_topic: "sensor/energy_meter/power_factor"
+    
+  power_apparent:
+    name: "Apparent Power"
+    address: 0x2012
+    unit: "VA"
+    device_class: "apparent_power"
+    state_class: "measurement"
+    ha_topic: "sensor/energy_meter/power_apparent"
+    
+  power_active:
+    name: "Active Power"
+    address: 0x2006
+    unit: "W"
+    device_class: "power"
+    state_class: "measurement"
+    ha_topic: "sensor/energy_meter/power_active"
+
+  power_reactive:
+    name: "Reactive Power"
+    address: 0x0000  # Virtual address - calculated from other values
+    unit: "VAR"
+    device_class: "reactive_power"
+    state_class: "measurement"
+    ha_topic: "sensor/energy_meter/power_reactive"
+
+# Logging
+logging:
+  level: "info"  # debug, info, warn, error
+  file: "/var/log/mqtt-modbus-bridge.log"
+  max_size: 100  # MB
+  max_age: 30    # days
