@@ -79,6 +79,9 @@ go mod tidy
 
 # Compile application
 go build -o mqtt-modbus-bridge ./cmd/main.go
+
+# Copy binary to binaries location
+cp mqtt-modbus-bridge /usr/local/bin/
 ```
 
 ## Configuration
