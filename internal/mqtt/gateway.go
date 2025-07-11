@@ -75,11 +75,11 @@ func (g *USRGateway) Connect(ctx context.Context) error {
 	attempt := 1
 	for {
 		log.Printf("🔄 Attempting to connect gateway to MQTT broker (attempt %d)...", attempt)
-		
+
 		if token := g.client.Connect(); token.Wait() && token.Error() != nil {
 			log.Printf("❌ Gateway connection failed (attempt %d): %v", attempt, token.Error())
 			log.Printf("⏳ Retrying in %.0f seconds...", retryDelay.Seconds())
-			
+
 			// Wait for retry delay or context cancellation
 			select {
 			case <-ctx.Done():
@@ -92,7 +92,7 @@ func (g *USRGateway) Connect(ctx context.Context) error {
 
 		// Connection successful, wait for full connection establishment
 		log.Printf("🔌 Gateway connection token successful, waiting for connection establishment...")
-		
+
 		// Wait for connection with timeout
 		connected := false
 		for i := 0; i < 50; i++ {
@@ -115,7 +115,7 @@ func (g *USRGateway) Connect(ctx context.Context) error {
 		// Connection establishment timeout
 		log.Printf("⏰ Gateway connection establishment timeout (attempt %d)", attempt)
 		log.Printf("⏳ Retrying in %.0f seconds...", retryDelay.Seconds())
-		
+
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("connection cancelled during timeout: %w", ctx.Err())

@@ -19,13 +19,13 @@ type Config struct {
 
 // MQTTConfig contains MQTT broker and gateway settings
 type MQTTConfig struct {
-	Broker      string        `yaml:"broker"`
-	Port        int           `yaml:"port"`
-	Username    string        `yaml:"username"`
-	Password    string        `yaml:"password"`
-	ClientID    string        `yaml:"client_id"`
-	RetryDelay  int           `yaml:"retry_delay"`  // Delay between connection retries in milliseconds
-	Gateway     GatewayConfig `yaml:"gateway"`
+	Broker     string        `yaml:"broker"`
+	Port       int           `yaml:"port"`
+	Username   string        `yaml:"username"`
+	Password   string        `yaml:"password"`
+	ClientID   string        `yaml:"client_id"`
+	RetryDelay int           `yaml:"retry_delay"` // Delay between connection retries in milliseconds
+	Gateway    GatewayConfig `yaml:"gateway"`
 }
 
 // GatewayConfig contains USR-DR164 gateway specific settings

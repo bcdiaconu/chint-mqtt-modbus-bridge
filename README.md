@@ -29,9 +29,19 @@ A robust bridge between USR-DR164 Modbus-MQTT Gateway and Home Assistant, implem
 ├── internal/
 │   ├── config/                    # Configuration management
 │   │   └── config.go
-│   ├── modbus/                    # Strategy Pattern for Modbus commands
-│   │   ├── strategy.go            # Interfaces and executor
-│   │   └── strategies.go          # Concrete implementations
+│   ├── modbus/                    # Command Pattern for Modbus operations
+│   │   ├── interfaces.go          # ModbusCommand interface and Gateway interface
+│   │   ├── types.go               # Common types (CommandResult, CommandError)
+│   │   ├── executor.go            # Command executor implementation
+│   │   ├── factory.go             # Command factory for creating commands
+│   │   ├── base_command.go        # Base command with common functionality
+│   │   ├── voltage_command.go     # Voltage reading command
+│   │   ├── frequency_command.go   # Frequency reading command
+│   │   ├── current_command.go     # Current reading command
+│   │   ├── energy_command.go      # Energy reading command
+│   │   ├── power_command.go       # Power reading command
+│   │   ├── power_factor_command.go       # Power factor reading command
+│   │   └── reactive_power_command.go     # Reactive power calculation command
 │   ├── mqtt/                      # USR-DR164 Gateway
 │   │   └── gateway.go
 │   └── homeassistant/             # Home Assistant Publisher
@@ -50,23 +60,23 @@ A robust bridge between USR-DR164 Modbus-MQTT Gateway and Home Assistant, implem
 
 ### 2. Open/Closed Principle (OCP)
 
-- `CommandStrategy`: Interface open for extensions, closed for modifications
+- `ModbusCommand`: Interface open for extensions, closed for modifications
 - New register types can be added without modifying existing code
 
 ### 3. Liskov Substitution Principle (LSP)
 
-- All strategies implement `CommandStrategy` and are interchangeable
-- `BaseStrategy` can replace any specific strategy
+- All commands implement `ModbusCommand` and are interchangeable
+- `BaseCommand` can replace any specific command
 
 ### 4. Interface Segregation Principle (ISP)
 
 - `Gateway`: Minimal interface for gateway communication
-- `CommandStrategy`: Specific interface for Modbus commands
+- `ModbusCommand`: Specific interface for Modbus commands
 
 ### 5. Dependency Inversion Principle (DIP)
 
 - `CommandExecutor` depends on `Gateway` interface, not implementation
-- `StrategyFactory` creates strategies based on interface
+- `CommandFactory` creates commands based on interface
 
 ## Installation
 
@@ -214,20 +224,54 @@ mqtt:
 
 To add a new register type:
 
-1. Create a new strategy in `strategies.go`
-2. Update `StrategyFactory.CreateStrategy()`
-3. Add the register in `config.yaml`
+1. Create a new command file in `internal/modbus/` (e.g., `temperature_command.go`)
+2. Implement the `ModbusCommand` interface
+3. Update `CommandFactory.CreateCommand()` in `factory.go`
+4. Add the register in `config.yaml`
 
 ```go
-// Example new strategy
-type TemperatureStrategy struct {
-    *BaseStrategy
+// Example new command - temperature_command.go
+package modbus
+
+import (
+    "encoding/binary"
+    "fmt"
+    "math"
+    "mqtt-modbus-bridge/internal/config"
+)
+
+type TemperatureCommand struct {
+    *BaseCommand
 }
 
-func (s *TemperatureStrategy) ParseData(rawData []byte) (float64, error) {
+func NewTemperatureCommand(register config.Register, slaveID uint8) *TemperatureCommand {
+    return &TemperatureCommand{
+        BaseCommand: NewBaseCommand(register, slaveID),
+    }
+}
+
+func (c *TemperatureCommand) ParseData(rawData []byte) (float64, error) {
     // Temperature-specific implementation
+    if len(rawData) < 4 {
+        return 0, fmt.Errorf("not enough data for float32: %d bytes", len(rawData))
+    }
+    
+    bits := binary.BigEndian.Uint32(rawData[:4])
+    value := math.Float32frombits(bits)
+    
+    return float64(value), nil
 }
 ```
+
+### Command Pattern Benefits
+
+The new file structure provides:
+
+- **Single Responsibility**: Each command file handles one register type
+- **Open/Closed Principle**: Add new commands without modifying existing code
+- **Easy Testing**: Each command can be tested independently
+- **Clear Organization**: Interfaces, types, and implementations are clearly separated
+- **Maintainability**: Changes to one command don't affect others
 
 ## Testing
 

@@ -28,12 +28,12 @@ const (
 // Application main application class
 // Facade Pattern - simplified interface for complex system
 type Application struct {
-	config     *config.Config
-	gateway    *mqtt.USRGateway
-	executor   *modbus.CommandExecutor
-	publisher  *homeassistant.Publisher
-	strategies map[string]modbus.CommandStrategy
-	mu         sync.Mutex // Mutex for synchronizing access to the gateway
+	config    *config.Config
+	gateway   *mqtt.USRGateway
+	executor  *modbus.CommandExecutor
+	publisher *homeassistant.Publisher
+	commands  map[string]modbus.ModbusCommand
+	mu        sync.Mutex // Mutex for synchronizing access to the gateway
 
 	// Gateway status tracking
 	consecutiveErrors int
@@ -69,11 +69,11 @@ func NewApplication(configPath string) (*Application, error) {
 	publisher := homeassistant.NewPublisher(&cfg.MQTT, &cfg.HomeAssistant)
 
 	app := &Application{
-		config:     cfg,
-		gateway:    gateway,
-		executor:   executor,
-		publisher:  publisher,
-		strategies: make(map[string]modbus.CommandStrategy),
+		config:    cfg,
+		gateway:   gateway,
+		executor:  executor,
+		publisher: publisher,
+		commands:  make(map[string]modbus.ModbusCommand),
 		// Initialize gateway status tracking
 		consecutiveErrors: 0,
 		isGatewayOnline:   true,
@@ -88,35 +88,35 @@ func NewApplication(configPath string) (*Application, error) {
 		errorReads:      0,
 	}
 
-	// Register strategies
-	if err := app.registerStrategies(); err != nil {
-		return nil, fmt.Errorf("error registering strategies: %w", err)
+	// Register commands
+	if err := app.registerCommands(); err != nil {
+		return nil, fmt.Errorf("error registering commands: %w", err)
 	}
 
 	return app, nil
 }
 
-// registerStrategies registers all strategies from configuration
-// Factory Pattern for creating strategies
-func (app *Application) registerStrategies() error {
-	factory := modbus.NewStrategyFactory(app.config.Modbus.SlaveID)
+// registerCommands registers all commands from configuration
+// Factory Pattern for creating commands
+func (app *Application) registerCommands() error {
+	factory := modbus.NewCommandFactory(app.config.Modbus.SlaveID)
 
 	for name, register := range app.config.Registers {
-		strategy, err := factory.CreateStrategy(register)
+		command, err := factory.CreateCommand(register)
 		if err != nil {
-			return fmt.Errorf("error creating strategy %s: %w", name, err)
+			return fmt.Errorf("error creating command %s: %w", name, err)
 		}
 
-		app.executor.RegisterStrategy(name, strategy)
-		app.strategies[name] = strategy
-		log.Printf("✅ Strategy registered: %s (%s)", name, register.Name)
+		app.executor.RegisterCommand(name, command)
+		app.commands[name] = command
+		log.Printf("✅ Command registered: %s (%s)", name, register.Name)
 	}
 
-	// Set executor for reactive power strategies that need it
-	for name, strategy := range app.strategies {
-		if reactivePowerStrategy, ok := strategy.(*modbus.ReactivePowerStrategy); ok {
-			reactivePowerStrategy.SetExecutor(app.executor)
-			log.Printf("🔧 Executor set for reactive power strategy: %s", name)
+	// Set executor for reactive power commands that need it
+	for name, command := range app.commands {
+		if reactivePowerCommand, ok := command.(*modbus.ReactivePowerCommand); ok {
+			reactivePowerCommand.SetExecutor(app.executor)
+			log.Printf("🔧 Executor set for reactive power command: %s", name)
 		}
 	}
 
@@ -222,7 +222,7 @@ func (app *Application) isEnergyRegister(name string) bool {
 
 // readNormalRegisters reads normal registers (voltage, current, power, frequency, power factor)
 func (app *Application) readNormalRegisters(ctx context.Context) {
-	for name := range app.strategies {
+	for name := range app.commands {
 		if !app.isEnergyRegister(name) {
 			app.readSingleRegister(ctx, name, "📊 Normal")
 		}
@@ -231,7 +231,7 @@ func (app *Application) readNormalRegisters(ctx context.Context) {
 
 // readEnergyRegisters reads energy registers (kWh meters)
 func (app *Application) readEnergyRegisters(ctx context.Context) {
-	for name := range app.strategies {
+	for name := range app.commands {
 		if app.isEnergyRegister(name) {
 			app.readSingleRegister(ctx, name, "⚡ Energy")
 		}
@@ -355,15 +355,15 @@ func (app *Application) publishDiscoveryConfigs(ctx context.Context) error {
 
 	// Create mock results for discovery
 	var results []*modbus.CommandResult
-	for name, strategy := range app.strategies {
+	for name, command := range app.commands {
 		result := &modbus.CommandResult{
 			Strategy:    name,
-			Name:        strategy.GetName(),
+			Name:        command.GetName(),
 			Value:       0, // Mock value
-			Unit:        strategy.GetUnit(),
-			Topic:       strategy.GetTopic(),
-			DeviceClass: strategy.GetDeviceClass(),
-			StateClass:  strategy.GetStateClass(),
+			Unit:        command.GetUnit(),
+			Topic:       command.GetTopic(),
+			DeviceClass: command.GetDeviceClass(),
+			StateClass:  command.GetStateClass(),
 		}
 		results = append(results, result)
 	}

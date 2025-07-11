@@ -60,11 +60,11 @@ func (p *Publisher) Connect(ctx context.Context) error {
 	attempt := 1
 	for {
 		log.Printf("🔄 Attempting to connect HA publisher to MQTT broker (attempt %d)...", attempt)
-		
+
 		if token := p.client.Connect(); token.Wait() && token.Error() != nil {
 			log.Printf("❌ HA Publisher connection failed (attempt %d): %v", attempt, token.Error())
 			log.Printf("⏳ Retrying in %.0f seconds...", retryDelay.Seconds())
-			
+
 			// Wait for retry delay or context cancellation
 			select {
 			case <-ctx.Done():
@@ -77,7 +77,7 @@ func (p *Publisher) Connect(ctx context.Context) error {
 
 		// Connection successful, wait for full connection establishment
 		log.Printf("🔌 HA Publisher connection token successful, waiting for connection establishment...")
-		
+
 		// Wait for connection with timeout
 		connected := false
 		for i := 0; i < 50; i++ {
@@ -100,7 +100,7 @@ func (p *Publisher) Connect(ctx context.Context) error {
 		// Connection establishment timeout
 		log.Printf("⏰ HA Publisher connection establishment timeout (attempt %d)", attempt)
 		log.Printf("⏳ Retrying in %.0f seconds...", retryDelay.Seconds())
-		
+
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("HA publisher connection cancelled during timeout: %w", ctx.Err())
