@@ -103,7 +103,10 @@ func (p *Publisher) PublishSensorDiscovery(ctx context.Context, result *modbus.C
 			Manufacturer: p.config.Manufacturer,
 			Model:        p.config.Model,
 		},
-		ValueTemplate: "{{ value_json.value }}",
+		ValueTemplate:       "{{ value_json.value }}",
+		AvailabilityTopic:   p.config.StatusTopic,
+		PayloadAvailable:    "online",
+		PayloadNotAvailable: "offline",
 	}
 
 	// Serialize configuration
@@ -238,14 +241,17 @@ func (p *Publisher) PublishStatusOffline(ctx context.Context) error {
 
 // SensorConfig configuration for a Home Assistant sensor
 type SensorConfig struct {
-	Name              string     `json:"name"`
-	UniqueID          string     `json:"unique_id"`
-	StateTopic        string     `json:"state_topic"`
-	UnitOfMeasurement string     `json:"unit_of_measurement,omitempty"`
-	DeviceClass       string     `json:"device_class,omitempty"`
-	StateClass        string     `json:"state_class,omitempty"`
-	Device            DeviceInfo `json:"device"`
-	ValueTemplate     string     `json:"value_template"`
+	Name                string     `json:"name"`
+	UniqueID            string     `json:"unique_id"`
+	StateTopic          string     `json:"state_topic"`
+	UnitOfMeasurement   string     `json:"unit_of_measurement,omitempty"`
+	DeviceClass         string     `json:"device_class,omitempty"`
+	StateClass          string     `json:"state_class,omitempty"`
+	Device              DeviceInfo `json:"device"`
+	ValueTemplate       string     `json:"value_template"`
+	AvailabilityTopic   string     `json:"availability_topic"`
+	PayloadAvailable    string     `json:"payload_available"`
+	PayloadNotAvailable string     `json:"payload_not_available"`
 }
 
 // DeviceInfo information about the device
