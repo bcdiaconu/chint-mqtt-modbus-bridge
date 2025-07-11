@@ -65,25 +65,65 @@ func NewUSRGateway(cfg *config.MQTTConfig) *USRGateway {
 	return gateway
 }
 
-// Connect connects the gateway to broker
+// Connect connects the gateway to broker with infinite retry
 func (g *USRGateway) Connect(ctx context.Context) error {
-	if token := g.client.Connect(); token.Wait() && token.Error() != nil {
-		return fmt.Errorf("error connecting MQTT gateway: %w", token.Error())
+	retryDelay := time.Duration(g.config.RetryDelay) * time.Millisecond
+	if retryDelay == 0 {
+		retryDelay = 5000 * time.Millisecond // Default 5 seconds
 	}
 
-	// Wait for connection
-	for i := 0; i < 50; i++ {
-		if g.IsConnected() {
+	attempt := 1
+	for {
+		log.Printf("🔄 Attempting to connect gateway to MQTT broker (attempt %d)...", attempt)
+		
+		if token := g.client.Connect(); token.Wait() && token.Error() != nil {
+			log.Printf("❌ Gateway connection failed (attempt %d): %v", attempt, token.Error())
+			log.Printf("⏳ Retrying in %.0f seconds...", retryDelay.Seconds())
+			
+			// Wait for retry delay or context cancellation
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("connection cancelled: %w", ctx.Err())
+			case <-time.After(retryDelay):
+				attempt++
+				continue
+			}
+		}
+
+		// Connection successful, wait for full connection establishment
+		log.Printf("🔌 Gateway connection token successful, waiting for connection establishment...")
+		
+		// Wait for connection with timeout
+		connected := false
+		for i := 0; i < 50; i++ {
+			if g.IsConnected() {
+				connected = true
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("connection cancelled during establishment: %w", ctx.Err())
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+
+		if connected {
+			log.Printf("✅ Gateway successfully connected to MQTT broker after %d attempts", attempt)
 			return nil
 		}
+
+		// Connection establishment timeout
+		log.Printf("⏰ Gateway connection establishment timeout (attempt %d)", attempt)
+		log.Printf("⏳ Retrying in %.0f seconds...", retryDelay.Seconds())
+		
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+			return fmt.Errorf("connection cancelled during timeout: %w", ctx.Err())
+		case <-time.After(retryDelay):
+			attempt++
+			continue
 		}
 	}
-
-	return fmt.Errorf("timeout connecting gateway")
 }
 
 // Disconnect disconnects the gateway

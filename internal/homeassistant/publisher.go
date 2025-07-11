@@ -15,8 +15,9 @@ import (
 // Publisher responsible for publishing data to Home Assistant
 // Single Responsibility Principle - only handles publishing to HA
 type Publisher struct {
-	client mqtt.Client
-	config *config.HAConfig
+	client     mqtt.Client
+	config     *config.HAConfig
+	mqttConfig *config.MQTTConfig
 }
 
 // NewPublisher creates a new publisher for Home Assistant
@@ -31,7 +32,8 @@ func NewPublisher(cfg *config.MQTTConfig, haCfg *config.HAConfig) *Publisher {
 	opts.SetPingTimeout(10 * time.Second)
 
 	publisher := &Publisher{
-		config: haCfg,
+		config:     haCfg,
+		mqttConfig: cfg,
 	}
 
 	// Callback for connection
@@ -48,25 +50,65 @@ func NewPublisher(cfg *config.MQTTConfig, haCfg *config.HAConfig) *Publisher {
 	return publisher
 }
 
-// Connect connects the publisher to the broker
+// Connect connects the publisher to the broker with infinite retry
 func (p *Publisher) Connect(ctx context.Context) error {
-	if token := p.client.Connect(); token.Wait() && token.Error() != nil {
-		return fmt.Errorf("error connecting HA publisher: %w", token.Error())
+	retryDelay := time.Duration(p.mqttConfig.RetryDelay) * time.Millisecond
+	if retryDelay == 0 {
+		retryDelay = 5000 * time.Millisecond // Default 5 seconds
 	}
 
-	// Wait for connection
-	for i := 0; i < 50; i++ {
-		if p.client.IsConnected() {
+	attempt := 1
+	for {
+		log.Printf("🔄 Attempting to connect HA publisher to MQTT broker (attempt %d)...", attempt)
+		
+		if token := p.client.Connect(); token.Wait() && token.Error() != nil {
+			log.Printf("❌ HA Publisher connection failed (attempt %d): %v", attempt, token.Error())
+			log.Printf("⏳ Retrying in %.0f seconds...", retryDelay.Seconds())
+			
+			// Wait for retry delay or context cancellation
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("HA publisher connection cancelled: %w", ctx.Err())
+			case <-time.After(retryDelay):
+				attempt++
+				continue
+			}
+		}
+
+		// Connection successful, wait for full connection establishment
+		log.Printf("🔌 HA Publisher connection token successful, waiting for connection establishment...")
+		
+		// Wait for connection with timeout
+		connected := false
+		for i := 0; i < 50; i++ {
+			if p.client.IsConnected() {
+				connected = true
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("HA publisher connection cancelled during establishment: %w", ctx.Err())
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+
+		if connected {
+			log.Printf("✅ HA Publisher successfully connected to MQTT broker after %d attempts", attempt)
 			return nil
 		}
+
+		// Connection establishment timeout
+		log.Printf("⏰ HA Publisher connection establishment timeout (attempt %d)", attempt)
+		log.Printf("⏳ Retrying in %.0f seconds...", retryDelay.Seconds())
+		
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+			return fmt.Errorf("HA publisher connection cancelled during timeout: %w", ctx.Err())
+		case <-time.After(retryDelay):
+			attempt++
+			continue
 		}
 	}
-
-	return fmt.Errorf("timeout connecting HA publisher")
 }
 
 // Disconnect disconnects the publisher
@@ -263,12 +305,12 @@ func (p *Publisher) PublishDiagnosticDiscovery(ctx context.Context) error {
 			Manufacturer: p.config.Manufacturer,
 			Model:        p.config.Model,
 		},
-		ValueTemplate:       "{{ value_json.message }}",
-		AvailabilityTopic:   p.config.StatusTopic,
-		PayloadAvailable:    "online",
-		PayloadNotAvailable: "offline",
+		ValueTemplate:          "{{ value_json.message }}",
+		AvailabilityTopic:      p.config.StatusTopic,
+		PayloadAvailable:       "online",
+		PayloadNotAvailable:    "offline",
 		JSONAttributesTemplate: "{{ value_json | tojson }}",
-		EntityCategory:      "diagnostic",
+		EntityCategory:         "diagnostic",
 	}
 
 	// Serialize configuration
@@ -290,19 +332,19 @@ func (p *Publisher) PublishDiagnosticDiscovery(ctx context.Context) error {
 
 // SensorConfig configuration for a Home Assistant sensor
 type SensorConfig struct {
-	Name                string     `json:"name"`
-	UniqueID            string     `json:"unique_id"`
-	StateTopic          string     `json:"state_topic"`
-	UnitOfMeasurement   string     `json:"unit_of_measurement,omitempty"`
-	DeviceClass         string     `json:"device_class,omitempty"`
-	StateClass          string     `json:"state_class,omitempty"`
-	Device              DeviceInfo `json:"device"`
-	ValueTemplate       string     `json:"value_template"`
-	AvailabilityTopic   string     `json:"availability_topic"`
-	PayloadAvailable    string     `json:"payload_available"`
-	PayloadNotAvailable string     `json:"payload_not_available"`
-	JSONAttributesTemplate string  `json:"json_attributes_template,omitempty"`
-	EntityCategory      string     `json:"entity_category,omitempty"`
+	Name                   string     `json:"name"`
+	UniqueID               string     `json:"unique_id"`
+	StateTopic             string     `json:"state_topic"`
+	UnitOfMeasurement      string     `json:"unit_of_measurement,omitempty"`
+	DeviceClass            string     `json:"device_class,omitempty"`
+	StateClass             string     `json:"state_class,omitempty"`
+	Device                 DeviceInfo `json:"device"`
+	ValueTemplate          string     `json:"value_template"`
+	AvailabilityTopic      string     `json:"availability_topic"`
+	PayloadAvailable       string     `json:"payload_available"`
+	PayloadNotAvailable    string     `json:"payload_not_available"`
+	JSONAttributesTemplate string     `json:"json_attributes_template,omitempty"`
+	EntityCategory         string     `json:"entity_category,omitempty"`
 }
 
 // DeviceInfo information about the device

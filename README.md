@@ -16,6 +16,7 @@ A robust bridge between USR-DR164 Modbus-MQTT Gateway and Home Assistant, implem
 - **SOLID Architecture**: Follows all SOLID principles for easy maintenance
 - **Strategy Pattern**: Each Modbus register type has its own parsing strategy
 - **Home Assistant Integration**: Auto-discovery and automatic sensor publishing
+- **Automatic Retry Logic**: Infinite retry with configurable delay if MQTT broker is unavailable
 - **External Configuration**: Complete configuration through YAML file
 - **Comprehensive Logging**: Detailed monitoring of all operations
 - **Graceful Shutdown**: Safe shutdown with complete cleanup
@@ -169,6 +170,45 @@ The diagnostic sensor is configured with `entity_category: "diagnostic"`, which 
 
 - Status: `modbus-bridge/status` (online/offline)
 - Diagnostic: `modbus-bridge/diagnostic` (error codes with timestamps)
+
+## MQTT Broker Connection & Retry Logic
+
+The application implements robust connection handling for MQTT broker connectivity:
+
+### Automatic Retry Configuration
+
+If the MQTT broker is not available at startup, the application will retry connecting indefinitely at configurable intervals:
+
+```yaml
+mqtt:
+  broker: "localhost"
+  port: 1883
+  username: "mqtt"
+  password: "mqtt_password"
+  client_id: "modbus-bridge"
+  retry_delay: 5000  # Retry delay in milliseconds (default: 5000ms = 5 seconds)
+```
+
+### Connection Behavior
+
+- **Startup**: If broker is unavailable, application logs attempts and retries every `retry_delay` milliseconds
+- **Runtime**: Built-in auto-reconnect handles temporary disconnections
+- **Logging**: Each connection attempt is logged with attempt number and timing
+- **Graceful**: Application can be stopped anytime during retry attempts with Ctrl+C
+
+### Example Output
+
+```text
+🔄 Attempting to connect gateway to MQTT broker (attempt 1)...
+❌ Gateway connection failed (attempt 1): network Error : dial tcp 127.0.0.1:1883: connectex: No connection could be made because the target machine actively refused it.
+⏳ Retrying in 5 seconds...
+🔄 Attempting to connect HA publisher to MQTT broker (attempt 1)...
+❌ HA Publisher connection failed (attempt 1): network Error : dial tcp 127.0.0.1:1883: connectex: No connection could be made because the target machine actively refused it.
+⏳ Retrying in 5 seconds...
+...
+✅ Gateway successfully connected to MQTT broker after 3 attempts
+✅ HA Publisher successfully connected to MQTT broker after 3 attempts
+```
 
 ## Development
 
