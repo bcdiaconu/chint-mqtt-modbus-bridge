@@ -28,6 +28,8 @@ func (c *PowerFactorCommand) ParseData(rawData []byte) (float64, error) {
 	bits := binary.BigEndian.Uint32(rawData[:4])
 	value := math.Float32frombits(bits)
 
-	// Always return absolute value for power factor
-	return math.Abs(float64(value)), nil
+	// Always return absolute value for power factor, rounded to 2 decimals
+	absVal := math.Abs(float64(value))
+	rounded := math.Round(absVal*100) / 100
+	return rounded, nil
 }
