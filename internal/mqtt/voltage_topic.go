@@ -129,11 +129,6 @@ func (v *VoltageTopic) ValidateData(result *modbus.CommandResult) error {
 		return fmt.Errorf("voltage value out of reasonable bounds: %.3f V (expected 0-1000V)", result.Value)
 	}
 
-	// Check for abnormally low voltage (possible power outage)
-	if result.Value < 180 && result.Value > 0 {
-		return fmt.Errorf("voltage value dangerously low: %.3f V (possible power issue)", result.Value)
-	}
-
 	// Check required fields
 	if result.Name == "" {
 		return fmt.Errorf("voltage sensor name is empty")

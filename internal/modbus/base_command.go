@@ -29,15 +29,10 @@ func NewBaseCommand(register config.Register, slaveID uint8) *BaseCommand {
 func (c *BaseCommand) Execute(ctx context.Context, gateway Gateway) ([]byte, error) {
 	// Function Code 03 - Read Holding Registers
 	// Read 2 registers (4 bytes) for float32
-	err := gateway.SendCommand(ctx, c.slaveID, 0x03, c.address, 2)
+	// Use atomic send/receive to prevent racing conditions
+	response, err := gateway.SendCommandAndWaitForResponse(ctx, c.slaveID, 0x03, c.address, 2, 5)
 	if err != nil {
-		return nil, fmt.Errorf("error sending command: %w", err)
-	}
-
-	// Wait for response
-	response, err := gateway.WaitForResponse(ctx, 5)
-	if err != nil {
-		return nil, fmt.Errorf("error waiting for response: %w", err)
+		return nil, fmt.Errorf("error executing command: %w", err)
 	}
 
 	return response, nil
@@ -74,7 +69,7 @@ func (c *BaseCommand) ParseData(rawData []byte) (float64, error) {
 		return 0, fmt.Errorf("not enough data for float32: %d bytes", len(rawData))
 	}
 
-	// Default implementation for float32
+	// Default implementation for float32 - BigEndian (standard Modbus)
 	bits := binary.BigEndian.Uint32(rawData[:4])
 	value := math.Float32frombits(bits)
 

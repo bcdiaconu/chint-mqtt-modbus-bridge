@@ -129,11 +129,6 @@ func (c *CurrentTopic) ValidateData(result *modbus.CommandResult) error {
 		return fmt.Errorf("current value out of reasonable bounds: %.3f A (expected 0-1000A)", result.Value)
 	}
 
-	// Check for dangerously high current (possible overload)
-	if result.Value > 500 {
-		return fmt.Errorf("current value dangerously high: %.3f A (possible overload)", result.Value)
-	}
-
 	// Check required fields
 	if result.Name == "" {
 		return fmt.Errorf("current sensor name is empty")

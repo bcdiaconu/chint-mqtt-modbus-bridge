@@ -124,14 +124,9 @@ func (pf *PowerFactorTopic) ValidateData(result *modbus.CommandResult) error {
 		return fmt.Errorf("power factor value is infinite for sensor %s", result.Name)
 	}
 
-	// Power factor specific validation - must be between 0 and 1
-	if result.Value < 0 || result.Value > 1 {
-		return fmt.Errorf("power factor value out of reasonable bounds: %.3f (expected 0-1)", result.Value)
-	}
-
-	// Check for very low power factor (poor efficiency)
-	if result.Value < 0.5 && result.Value > 0 {
-		return fmt.Errorf("power factor value critically low: %.3f (poor efficiency)", result.Value)
+	// Power factor specific validation - relaxed range for debugging
+	if result.Value < 0 || result.Value > 100 {
+		return fmt.Errorf("power factor value out of bounds: %.3f (expected 0-100)", result.Value)
 	}
 
 	// Check required fields

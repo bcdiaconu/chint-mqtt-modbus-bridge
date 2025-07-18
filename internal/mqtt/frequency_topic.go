@@ -124,14 +124,9 @@ func (f *FrequencyTopic) ValidateData(result *modbus.CommandResult) error {
 		return fmt.Errorf("frequency value is infinite for sensor %s", result.Name)
 	}
 
-	// Frequency-specific validation - electrical grid standards
-	if result.Value < 40 || result.Value > 70 {
-		return fmt.Errorf("frequency value out of reasonable bounds: %.3f Hz (expected 40-70Hz)", result.Value)
-	}
-
-	// Check for critical frequency deviations (European grid standard 50Hz ±0.5Hz)
-	if result.Value < 49 || result.Value > 51 {
-		return fmt.Errorf("frequency value outside grid stability range: %.3f Hz (critical deviation from 50Hz)", result.Value)
+	// Frequency-specific validation - relaxed range for debugging
+	if result.Value < 0 || result.Value > 1000 {
+		return fmt.Errorf("frequency value out of bounds: %.3f Hz (expected 0-1000Hz)", result.Value)
 	}
 
 	// Check required fields

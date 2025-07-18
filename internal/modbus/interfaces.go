@@ -42,6 +42,9 @@ type Gateway interface {
 	// WaitForResponse waits for response from gateway
 	WaitForResponse(ctx context.Context, timeout int) ([]byte, error)
 
+	// SendCommandAndWaitForResponse sends a command and waits for response atomically
+	SendCommandAndWaitForResponse(ctx context.Context, slaveID uint8, functionCode uint8, address uint16, count uint16, timeoutSeconds int) ([]byte, error)
+
 	// IsConnected checks if gateway is connected
 	IsConnected() bool
 }
