@@ -49,6 +49,10 @@ type Application struct {
 	lastSummaryTime time.Time
 	successfulReads int
 	errorReads      int
+
+	// Last publish tracking for forced republish
+	lastPublishTime  map[string]time.Time // Track last publish time per sensor
+	lastPublishMutex sync.RWMutex         // Protect lastPublishTime access
 }
 
 // NewApplication creates a new application instance
@@ -86,6 +90,9 @@ func NewApplication(configPath string) (*Application, error) {
 		lastSummaryTime: time.Now(),
 		successfulReads: 0,
 		errorReads:      0,
+
+		// Initialize last publish tracking
+		lastPublishTime: make(map[string]time.Time),
 	}
 
 	// Register commands
@@ -153,6 +160,12 @@ func (app *Application) Start(ctx context.Context) error {
 	// Start separate polling loops for different register types
 	go app.mainLoopNormalRegisters(ctx)
 	go app.mainLoopEnergyRegisters(ctx)
+
+	// Start heartbeat to maintain online status
+	go app.heartbeatLoop(ctx)
+
+	// Start forced republish loop for energy sensors
+	go app.forcedRepublishLoop(ctx)
 
 	log.Printf("✅ MQTT-Modbus Bridge started successfully")
 	log.Printf("🔇 Verbose logging reduced - Summary reports every 30 seconds")
@@ -245,7 +258,38 @@ func (app *Application) readSingleRegister(ctx context.Context, name string, log
 	defer app.mu.Unlock()
 
 	result, err := app.executor.ExecuteCommand(ctx, name)
+
+	// Handle different error scenarios
 	if err != nil {
+		// Check if we got a cached result despite the error
+		if result != nil {
+			// We have a cached value - treat as partial success
+			app.successfulReads++
+
+			// Log the fact that we're using cached data (but not too often)
+			if app.consecutiveErrors == 0 || app.consecutiveErrors%10 == 0 {
+				log.Printf("📋 %s using cached value for %s: %.3f %s (reason: %v)",
+					logPrefix, result.Name, result.Value, result.Unit, err)
+			}
+
+			// Don't increment error count as aggressively since we have data
+			// but track that there was an issue
+			app.errorReads++
+
+			// Publish the cached result to maintain sensor availability
+			if pubErr := app.publisher.PublishSensorState(ctx, result); pubErr != nil {
+				log.Printf("⚠️ Error publishing cached sensor state: %v", pubErr)
+			}
+
+			// Publish diagnostic but with lower severity
+			errorMsg := fmt.Sprintf("Register %s using cached data: %v", name, err)
+			if ctxErr := app.publisher.PublishDiagnostic(ctx, DiagnosticModbusError, errorMsg); ctxErr != nil {
+				log.Printf("⚠️ Error publishing diagnostic: %v", ctxErr)
+			}
+			return
+		}
+
+		// No result and no cache - this is a real failure
 		app.errorReads++
 
 		// Only log errors occasionally to avoid spam
@@ -264,7 +308,7 @@ func (app *Application) readSingleRegister(ctx context.Context, name string, log
 		return
 	}
 
-	// Reset error counter on successful read
+	// Successful read - reset error counter
 	app.handleGatewaySuccess(ctx)
 	app.successfulReads++
 
@@ -272,8 +316,8 @@ func (app *Application) readSingleRegister(ctx context.Context, name string, log
 	shouldLog := time.Since(app.lastSummaryTime) >= 30*time.Second
 
 	if shouldLog {
-		log.Printf("� Summary - Success: %d, Errors: %d, Last 30s", app.successfulReads, app.errorReads)
-		log.Printf("�📈 %s %s: %.3f %s", logPrefix, result.Name, result.Value, result.Unit)
+		log.Printf("📊 Summary - Success: %d, Errors: %d, Last 30s", app.successfulReads, app.errorReads)
+		log.Printf("📈 %s %s: %.3f %s", logPrefix, result.Name, result.Value, result.Unit)
 		app.lastSummaryTime = time.Now()
 		app.successfulReads = 0
 		app.errorReads = 0
@@ -288,6 +332,9 @@ func (app *Application) readSingleRegister(ctx context.Context, name string, log
 		if ctxErr := app.publisher.PublishDiagnostic(ctx, DiagnosticMQTTDisconnected, errorMsg); ctxErr != nil {
 			log.Printf("⚠️ Error publishing diagnostic: %v", ctxErr)
 		}
+	} else {
+		// Update last publish time for successful publications
+		app.updateLastPublishTime(name)
 	}
 }
 
@@ -417,4 +464,88 @@ func main() {
 
 	// Stop application
 	app.Stop()
+}
+
+// heartbeatLoop sends periodic "online" status to maintain availability
+func (app *Application) heartbeatLoop(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second) // Send heartbeat every 30 seconds
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("🔇 Heartbeat loop stopped")
+			return
+		case <-ticker.C:
+			// Only send heartbeat if we're currently marked as online
+			if app.isGatewayOnline {
+				if err := app.publisher.PublishStatusOnline(ctx); err != nil {
+					log.Printf("⚠️ Heartbeat failed: %v", err)
+				}
+			}
+		}
+	}
+}
+
+// updateLastPublishTime updates the last publish time for a sensor
+func (app *Application) updateLastPublishTime(sensorName string) {
+	app.mu.Lock()
+	defer app.mu.Unlock()
+	app.lastPublishTime[sensorName] = time.Now()
+}
+
+// forcedRepublishLoop periodically republishes energy values to prevent Home Assistant unavailable states
+func (app *Application) forcedRepublishLoop(ctx context.Context) {
+	// Get republish interval from config, default to 4 hours if not set
+	republishHours := app.config.Modbus.RepublishInterval
+	if republishHours <= 0 {
+		republishHours = 4 // Default fallback
+	}
+	
+	ticker := time.NewTicker(time.Duration(republishHours) * time.Hour)
+	defer ticker.Stop()
+
+	log.Printf("📡 Started forced republish loop for energy sensors (every %d hours)", republishHours)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("⏹️ Forced republish loop stopped")
+			return
+		case <-ticker.C:
+			log.Printf("🔄 Running forced republish for energy sensors (interval: %d hours)...", republishHours)
+			app.forceRepublishEnergySensors(ctx)
+		}
+	}
+}
+
+// forceRepublishEnergySensors republishes energy sensor values to maintain Home Assistant availability
+func (app *Application) forceRepublishEnergySensors(ctx context.Context) {
+	energySensors := []string{
+		"energy_total",
+		"energy_imported",
+		"energy_exported",
+	}
+
+	// Get republish interval from config, default to 4 hours if not set
+	republishHours := app.config.Modbus.RepublishInterval
+	if republishHours <= 0 {
+		republishHours = 4 // Default fallback
+	}
+
+	// Only republish if it's been more than 75% of the republish interval since last publish
+	threshold := time.Duration(float64(republishHours)*0.75) * time.Hour
+
+	for _, sensorName := range energySensors {
+		app.mu.Lock()
+		lastPublish, exists := app.lastPublishTime[sensorName]
+		app.mu.Unlock()
+
+		if !exists || time.Since(lastPublish) > threshold {
+			log.Printf("🔄 Force republishing %s (last published: %v)", sensorName, lastPublish.Format("15:04:05"))
+			
+			// Execute the command to get current value
+			app.readSingleRegister(ctx, sensorName, "FORCED")
+		}
+	}
 }

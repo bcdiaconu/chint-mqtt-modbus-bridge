@@ -34,6 +34,7 @@ modbus:
   register_delay: 100       # milliseconds between register reads
   energy_delay: 1000        # milliseconds between energy register reads (kWh meters)
   timeout: 5                # timeout for responses
+  republish_interval: 4     # hours between forced republishing of energy sensors
 
 # Modbus Registers with Strategy Pattern
 registers:
@@ -112,7 +113,7 @@ registers:
   power_reactive:
     name: "Reactive Power"
     address: 0x0000  # Virtual address - calculated from other values
-    unit: "VAR"
+    unit: "var"
     device_class: "reactive_power"
     state_class: "measurement"
     ha_topic: "sensor/energy_meter/power_reactive"

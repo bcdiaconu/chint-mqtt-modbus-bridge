@@ -48,11 +48,12 @@ type HAConfig struct {
 
 // ModbusConfig contains Modbus device settings
 type ModbusConfig struct {
-	SlaveID       uint8 `yaml:"slave_id"`
-	PollInterval  int   `yaml:"poll_interval"`
-	RegisterDelay int   `yaml:"register_delay"`
-	EnergyDelay   int   `yaml:"energy_delay"`
-	Timeout       int   `yaml:"timeout"`
+	SlaveID          uint8 `yaml:"slave_id"`
+	PollInterval     int   `yaml:"poll_interval"`
+	RegisterDelay    int   `yaml:"register_delay"`
+	EnergyDelay      int   `yaml:"energy_delay"`
+	Timeout          int   `yaml:"timeout"`
+	RepublishInterval int   `yaml:"republish_interval"` // Hours between forced republishing of energy sensors
 }
 
 // Register represents a Modbus register configuration

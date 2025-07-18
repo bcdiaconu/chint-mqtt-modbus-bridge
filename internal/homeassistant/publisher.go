@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"mqtt-modbus-bridge/internal/config"
 	"mqtt-modbus-bridge/internal/modbus"
 	"time"
@@ -31,6 +32,9 @@ func NewPublisher(cfg *config.MQTTConfig, haCfg *config.HAConfig) *Publisher {
 	opts.SetKeepAlive(60 * time.Second)
 	opts.SetPingTimeout(10 * time.Second)
 
+	// Set Last Will and Testament to automatically mark as offline on disconnect
+	opts.SetWill(haCfg.StatusTopic, "offline", 1, true)
+
 	publisher := &Publisher{
 		config:     haCfg,
 		mqttConfig: cfg,
@@ -39,6 +43,10 @@ func NewPublisher(cfg *config.MQTTConfig, haCfg *config.HAConfig) *Publisher {
 	// Callback for connection
 	opts.SetOnConnectHandler(func(client mqtt.Client) {
 		log.Printf("✅ HA Publisher connected to MQTT broker")
+		// Immediately publish online status when connected
+		if token := client.Publish(haCfg.StatusTopic, 1, true, "online"); token.Wait() && token.Error() != nil {
+			log.Printf("⚠️ Error publishing online status on connect: %v", token.Error())
+		}
 	})
 
 	// Callback for disconnection
@@ -173,6 +181,11 @@ func (p *Publisher) PublishSensorDiscovery(ctx context.Context, result *modbus.C
 func (p *Publisher) PublishSensorState(ctx context.Context, result *modbus.CommandResult) error {
 	if !p.client.IsConnected() {
 		return fmt.Errorf("publisher is not connected")
+	}
+
+	// Validate the result before publishing
+	if err := p.validateSensorData(result); err != nil {
+		return fmt.Errorf("invalid sensor data: %w", err)
 	}
 
 	// State topic
@@ -380,4 +393,55 @@ func extractSensorName(topic string) string {
 	}
 
 	return topic
+}
+
+// validateSensorData validates sensor data before publishing to prevent unknown values
+func (p *Publisher) validateSensorData(result *modbus.CommandResult) error {
+	// Check for invalid numeric values
+	if math.IsNaN(result.Value) {
+		return fmt.Errorf("value is NaN for sensor %s", result.Name)
+	}
+
+	if math.IsInf(result.Value, 0) {
+		return fmt.Errorf("value is infinite for sensor %s", result.Name)
+	}
+
+	// Check for reasonable bounds based on device class
+	switch result.DeviceClass {
+	case "voltage":
+		if result.Value < 0 || result.Value > 1000 {
+			return fmt.Errorf("voltage value out of reasonable bounds: %.3f", result.Value)
+		}
+	case "current":
+		if result.Value < 0 || result.Value > 1000 {
+			return fmt.Errorf("current value out of reasonable bounds: %.3f", result.Value)
+		}
+	case "frequency":
+		if result.Value < 40 || result.Value > 70 {
+			return fmt.Errorf("frequency value out of reasonable bounds: %.3f", result.Value)
+		}
+	case "power", "apparent_power":
+		if result.Value < -100000 || result.Value > 100000 {
+			return fmt.Errorf("power value out of reasonable bounds: %.3f", result.Value)
+		}
+	case "power_factor":
+		if result.Value < 0 || result.Value > 1 {
+			return fmt.Errorf("power factor value out of reasonable bounds: %.3f", result.Value)
+		}
+	case "energy":
+		if result.Value < 0 || result.Value > 999999999 {
+			return fmt.Errorf("energy value out of reasonable bounds: %.3f", result.Value)
+		}
+	}
+
+	// Check required fields
+	if result.Name == "" {
+		return fmt.Errorf("sensor name is empty")
+	}
+
+	if result.Topic == "" {
+		return fmt.Errorf("sensor topic is empty")
+	}
+
+	return nil
 }
