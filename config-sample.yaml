@@ -120,7 +120,7 @@ registers:
 
 # Logging
 logging:
-  level: "info"  # debug, info, warn, error
+  level: "info"      # error, warn, info, debug, trace
   file: "/var/log/mqtt-modbus-bridge.log"
-  max_size: 100  # MB
-  max_age: 30    # days
+  max_size: 100      # MB
+  max_age: 30        # days

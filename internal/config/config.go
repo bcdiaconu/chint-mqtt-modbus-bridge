@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"mqtt-modbus-bridge/internal/logger"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -10,11 +11,11 @@ import (
 // Config represents the complete application configuration
 // Follows SRP - only responsible for configuration management
 type Config struct {
-	MQTT          MQTTConfig          `yaml:"mqtt"`
-	HomeAssistant HAConfig            `yaml:"homeassistant"`
-	Modbus        ModbusConfig        `yaml:"modbus"`
-	Registers     map[string]Register `yaml:"registers"`
-	Logging       LoggingConfig       `yaml:"logging"`
+	MQTT          MQTTConfig           `yaml:"mqtt"`
+	HomeAssistant HAConfig             `yaml:"homeassistant"`
+	Modbus        ModbusConfig         `yaml:"modbus"`
+	Registers     map[string]Register  `yaml:"registers"`
+	Logging       logger.LoggingConfig `yaml:"logging"`
 }
 
 // MQTTConfig contains MQTT broker and gateway settings
@@ -48,11 +49,11 @@ type HAConfig struct {
 
 // ModbusConfig contains Modbus device settings
 type ModbusConfig struct {
-	SlaveID          uint8 `yaml:"slave_id"`
-	PollInterval     int   `yaml:"poll_interval"`
-	RegisterDelay    int   `yaml:"register_delay"`
-	EnergyDelay      int   `yaml:"energy_delay"`
-	Timeout          int   `yaml:"timeout"`
+	SlaveID           uint8 `yaml:"slave_id"`
+	PollInterval      int   `yaml:"poll_interval"`
+	RegisterDelay     int   `yaml:"register_delay"`
+	EnergyDelay       int   `yaml:"energy_delay"`
+	Timeout           int   `yaml:"timeout"`
 	RepublishInterval int   `yaml:"republish_interval"` // Hours between forced republishing of energy sensors
 }
 
@@ -65,14 +66,6 @@ type Register struct {
 	DeviceClass string `yaml:"device_class"`
 	StateClass  string `yaml:"state_class"`
 	HATopic     string `yaml:"ha_topic"`
-}
-
-// LoggingConfig contains logging settings
-type LoggingConfig struct {
-	Level   string `yaml:"level"`
-	File    string `yaml:"file"`
-	MaxSize int    `yaml:"max_size"`
-	MaxAge  int    `yaml:"max_age"`
 }
 
 // LoadConfig loads configuration from specified file

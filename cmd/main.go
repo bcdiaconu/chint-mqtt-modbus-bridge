@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"log"
 	"mqtt-modbus-bridge/internal/config"
-	"mqtt-modbus-bridge/internal/homeassistant"
+	"mqtt-modbus-bridge/internal/gateway"
+	"mqtt-modbus-bridge/internal/logger"
 	"mqtt-modbus-bridge/internal/modbus"
 	"mqtt-modbus-bridge/internal/mqtt"
 	"os"
@@ -29,9 +30,9 @@ const (
 // Facade Pattern - simplified interface for complex system
 type Application struct {
 	config    *config.Config
-	gateway   *mqtt.USRGateway
+	gateway   *gateway.USRGateway
 	executor  *modbus.CommandExecutor
-	publisher *homeassistant.Publisher
+	publisher *mqtt.Publisher
 	commands  map[string]modbus.ModbusCommand
 	mu        sync.Mutex // Mutex for synchronizing access to the gateway
 
@@ -63,18 +64,22 @@ func NewApplication(configPath string) (*Application, error) {
 		return nil, fmt.Errorf("error loading configuration: %w", err)
 	}
 
+	// Initialize logging with level
+	logger.GlobalLogging = &cfg.Logging
+	logger.LogInfo("🔧 Logging initialized with level: %s", cfg.Logging.Level)
+
 	// Create gateway
-	gateway := mqtt.NewUSRGateway(&cfg.MQTT)
+	gatewayInstance := gateway.NewUSRGateway(&cfg.MQTT)
 
 	// Create command executor
-	executor := modbus.NewCommandExecutor(gateway, &cfg.Modbus)
+	executor := modbus.NewCommandExecutor(gatewayInstance, &cfg.Modbus)
 
 	// Create publisher for Home Assistant
-	publisher := homeassistant.NewPublisher(&cfg.MQTT, &cfg.HomeAssistant)
+	publisher := mqtt.NewPublisher(&cfg.MQTT, &cfg.HomeAssistant)
 
 	app := &Application{
 		config:    cfg,
-		gateway:   gateway,
+		gateway:   gatewayInstance,
 		executor:  executor,
 		publisher: publisher,
 		commands:  make(map[string]modbus.ModbusCommand),
@@ -116,14 +121,14 @@ func (app *Application) registerCommands() error {
 
 		app.executor.RegisterCommand(name, command)
 		app.commands[name] = command
-		log.Printf("✅ Command registered: %s (%s)", name, register.Name)
+		logger.LogInfo("✅ Command registered: %s (%s)", name, register.Name)
 	}
 
 	// Set executor for reactive power commands that need it
 	for name, command := range app.commands {
 		if reactivePowerCommand, ok := command.(*modbus.ReactivePowerCommand); ok {
 			reactivePowerCommand.SetExecutor(app.executor)
-			log.Printf("🔧 Executor set for reactive power command: %s", name)
+			logger.LogDebug("🔧 Executor set for reactive power command: %s", name)
 		}
 	}
 
@@ -132,7 +137,7 @@ func (app *Application) registerCommands() error {
 
 // Start starts the application
 func (app *Application) Start(ctx context.Context) error {
-	log.Printf("🚀 Starting MQTT-Modbus Bridge...")
+	logger.LogInfo("🚀 Starting MQTT-Modbus Bridge...")
 
 	// Connect gateway
 	if err := app.gateway.Connect(ctx); err != nil {
@@ -146,13 +151,13 @@ func (app *Application) Start(ctx context.Context) error {
 
 	// Publish discovery configurations for Home Assistant
 	if err := app.publishDiscoveryConfigs(ctx); err != nil {
-		log.Printf("⚠️ Error publishing discovery configs: %v", err)
+		logger.LogError("⚠️ Error publishing discovery configs: %v", err)
 		app.publisher.PublishDiagnostic(ctx, DiagnosticConfigError, fmt.Sprintf("Discovery config error: %v", err))
 	}
 
 	// Publish online status
 	if err := app.publisher.PublishStatusOnline(ctx); err != nil {
-		log.Printf("⚠️ Error publishing online status: %v", err)
+		logger.LogError("⚠️ Error publishing online status: %v", err)
 	} else {
 		app.publisher.PublishDiagnostic(ctx, DiagnosticOK, "MQTT-Modbus Bridge started successfully")
 	}
@@ -167,21 +172,21 @@ func (app *Application) Start(ctx context.Context) error {
 	// Start forced republish loop for energy sensors
 	go app.forcedRepublishLoop(ctx)
 
-	log.Printf("✅ MQTT-Modbus Bridge started successfully")
-	log.Printf("🔇 Verbose logging reduced - Summary reports every 30 seconds")
+	logger.LogInfo("✅ MQTT-Modbus Bridge started successfully")
+	logger.LogInfo("🔇 Verbose logging reduced - Summary reports every 30 seconds")
 	return nil
 }
 
 // Stop stops the application
 func (app *Application) Stop() {
-	log.Printf("🛑 Stopping MQTT-Modbus Bridge...")
+	logger.LogInfo("🛑 Stopping MQTT-Modbus Bridge...")
 
 	// Publish offline status before disconnecting
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := app.publisher.PublishStatusOffline(ctx); err != nil {
-		log.Printf("⚠️ Error publishing offline status: %v", err)
+		logger.LogError("⚠️ Error publishing offline status: %v", err)
 	} else {
 		app.publisher.PublishDiagnostic(ctx, DiagnosticOK, "MQTT-Modbus Bridge stopped gracefully")
 	}
@@ -189,19 +194,23 @@ func (app *Application) Stop() {
 	app.gateway.Disconnect()
 	app.publisher.Disconnect()
 
-	log.Printf("✅ MQTT-Modbus Bridge stopped")
+	logger.LogInfo("✅ MQTT-Modbus Bridge stopped")
 }
 
 // mainLoopNormalRegisters polling loop for normal registers (voltage, current, power, etc.)
 func (app *Application) mainLoopNormalRegisters(ctx context.Context) {
-	ticker := time.NewTicker(time.Duration(app.config.Modbus.RegisterDelay) * time.Millisecond)
+	ticker := time.NewTicker(time.Duration(app.config.Modbus.PollInterval) * time.Millisecond)
 	defer ticker.Stop()
+
+	logger.LogDebug("🔄 Normal registers polling started (interval: %dms)", app.config.Modbus.PollInterval)
 
 	for {
 		select {
 		case <-ctx.Done():
+			logger.LogDebug("🔄 Normal registers polling stopped")
 			return
 		case <-ticker.C:
+			logger.LogDebug("🔄 Normal registers tick - reading normal registers...")
 			app.readNormalRegisters(ctx)
 		}
 	}
@@ -212,11 +221,15 @@ func (app *Application) mainLoopEnergyRegisters(ctx context.Context) {
 	ticker := time.NewTicker(time.Duration(app.config.Modbus.EnergyDelay) * time.Millisecond)
 	defer ticker.Stop()
 
+	logger.LogDebug("⚡ Energy registers polling started (interval: %dms)", app.config.Modbus.EnergyDelay)
+
 	for {
 		select {
 		case <-ctx.Done():
+			logger.LogDebug("⚡ Energy registers polling stopped")
 			return
 		case <-ticker.C:
+			logger.LogDebug("⚡ Energy registers tick - reading energy registers...")
 			app.readEnergyRegisters(ctx)
 		}
 	}
@@ -235,8 +248,10 @@ func (app *Application) isEnergyRegister(name string) bool {
 
 // readNormalRegisters reads normal registers (voltage, current, power, frequency, power factor)
 func (app *Application) readNormalRegisters(ctx context.Context) {
+	logger.LogTrace("📊 Reading normal registers...")
 	for name := range app.commands {
 		if !app.isEnergyRegister(name) {
+			logger.LogTrace("📊 Reading normal register: %s", name)
 			app.readSingleRegister(ctx, name, "📊 Normal")
 		}
 	}
@@ -244,8 +259,10 @@ func (app *Application) readNormalRegisters(ctx context.Context) {
 
 // readEnergyRegisters reads energy registers (kWh meters)
 func (app *Application) readEnergyRegisters(ctx context.Context) {
+	logger.LogTrace("⚡ Reading energy registers...")
 	for name := range app.commands {
 		if app.isEnergyRegister(name) {
+			logger.LogTrace("⚡ Reading energy register: %s", name)
 			app.readSingleRegister(ctx, name, "⚡ Energy")
 		}
 	}
@@ -268,7 +285,7 @@ func (app *Application) readSingleRegister(ctx context.Context, name string, log
 
 			// Log the fact that we're using cached data (but not too often)
 			if app.consecutiveErrors == 0 || app.consecutiveErrors%10 == 0 {
-				log.Printf("📋 %s using cached value for %s: %.3f %s (reason: %v)",
+				logger.LogWarn("📋 %s using cached value for %s: %.3f %s (reason: %v)",
 					logPrefix, result.Name, result.Value, result.Unit, err)
 			}
 
@@ -278,13 +295,13 @@ func (app *Application) readSingleRegister(ctx context.Context, name string, log
 
 			// Publish the cached result to maintain sensor availability
 			if pubErr := app.publisher.PublishSensorState(ctx, result); pubErr != nil {
-				log.Printf("⚠️ Error publishing cached sensor state: %v", pubErr)
+				logger.LogError("⚠️ Error publishing cached sensor state: %v", pubErr)
 			}
 
 			// Publish diagnostic but with lower severity
 			errorMsg := fmt.Sprintf("Register %s using cached data: %v", name, err)
 			if ctxErr := app.publisher.PublishDiagnostic(ctx, DiagnosticModbusError, errorMsg); ctxErr != nil {
-				log.Printf("⚠️ Error publishing diagnostic: %v", ctxErr)
+				logger.LogError("⚠️ Error publishing diagnostic: %v", ctxErr)
 			}
 			return
 		}
@@ -294,7 +311,7 @@ func (app *Application) readSingleRegister(ctx context.Context, name string, log
 
 		// Only log errors occasionally to avoid spam
 		if app.consecutiveErrors == 0 || app.consecutiveErrors%10 == 0 {
-			log.Printf("❌ %s execution error %s: %v", logPrefix, name, err)
+			logger.LogError("❌ %s execution error %s: %v", logPrefix, name, err)
 		}
 
 		// Track consecutive errors for gateway status
@@ -303,7 +320,7 @@ func (app *Application) readSingleRegister(ctx context.Context, name string, log
 		// Publish diagnostic error
 		errorMsg := fmt.Sprintf("Register %s read error: %v", name, err)
 		if ctxErr := app.publisher.PublishDiagnostic(ctx, DiagnosticModbusError, errorMsg); ctxErr != nil {
-			log.Printf("⚠️ Error publishing diagnostic: %v", ctxErr)
+			logger.LogError("⚠️ Error publishing diagnostic: %v", ctxErr)
 		}
 		return
 	}
@@ -316,8 +333,8 @@ func (app *Application) readSingleRegister(ctx context.Context, name string, log
 	shouldLog := time.Since(app.lastSummaryTime) >= 30*time.Second
 
 	if shouldLog {
-		log.Printf("📊 Summary - Success: %d, Errors: %d, Last 30s", app.successfulReads, app.errorReads)
-		log.Printf("📈 %s %s: %.3f %s", logPrefix, result.Name, result.Value, result.Unit)
+		logger.LogInfo("📊 Summary - Success: %d, Errors: %d, Last 30s", app.successfulReads, app.errorReads)
+		logger.LogInfo("📈 %s %s: %.3f %s", logPrefix, result.Name, result.Value, result.Unit)
 		app.lastSummaryTime = time.Now()
 		app.successfulReads = 0
 		app.errorReads = 0
@@ -325,12 +342,12 @@ func (app *Application) readSingleRegister(ctx context.Context, name string, log
 
 	// Publish state to Home Assistant
 	if err := app.publisher.PublishSensorState(ctx, result); err != nil {
-		log.Printf("❌ %s state publication error %s: %v", logPrefix, result.Name, err)
+		logger.LogError("❌ %s state publication error %s: %v", logPrefix, result.Name, err)
 
 		// Publish diagnostic error
 		errorMsg := fmt.Sprintf("State publication error for %s: %v", result.Name, err)
 		if ctxErr := app.publisher.PublishDiagnostic(ctx, DiagnosticMQTTDisconnected, errorMsg); ctxErr != nil {
-			log.Printf("⚠️ Error publishing diagnostic: %v", ctxErr)
+			logger.LogError("⚠️ Error publishing diagnostic: %v", ctxErr)
 		}
 	} else {
 		// Update last publish time for successful publications
@@ -346,14 +363,14 @@ func (app *Application) handleGatewayError(ctx context.Context) {
 	// If this is the first error in the sequence, record the time
 	if app.firstErrorTime.IsZero() {
 		app.firstErrorTime = time.Now()
-		log.Printf("⚠️ First error detected, starting grace period of %.0f seconds", app.errorGracePeriod.Seconds())
+		logger.LogWarn("⚠️ First error detected, starting grace period of %.0f seconds", app.errorGracePeriod.Seconds())
 	}
 
 	// Check if we're still in grace period
 	timeSinceFirstError := time.Since(app.firstErrorTime)
 	if timeSinceFirstError < app.errorGracePeriod {
 		// Still in grace period - don't change status to offline yet
-		log.Printf("🕐 Error %d in grace period (%.1fs/%.0fs) - keeping status online",
+		logger.LogDebug("🕐 Error %d in grace period (%.1fs/%.0fs) - keeping status online",
 			app.consecutiveErrors, timeSinceFirstError.Seconds(), app.errorGracePeriod.Seconds())
 		return
 	}
@@ -362,12 +379,12 @@ func (app *Application) handleGatewayError(ctx context.Context) {
 	if app.isGatewayOnline && !app.statusSetToOffline {
 		app.isGatewayOnline = false
 		app.statusSetToOffline = true
-		log.Printf("🔴 Grace period expired - App marked as OFFLINE after %d errors over %.1f seconds",
+		logger.LogError("🔴 Grace period expired - App marked as OFFLINE after %d errors over %.1f seconds",
 			app.consecutiveErrors, timeSinceFirstError.Seconds())
 
 		// Publish offline status to ensure MQTT broker has correct state
 		if err := app.publisher.PublishStatusOffline(ctx); err != nil {
-			log.Printf("⚠️ Error publishing offline status: %v", err)
+			logger.LogError("⚠️ Error publishing offline status: %v", err)
 		}
 	}
 }
@@ -382,23 +399,23 @@ func (app *Application) handleGatewaySuccess(ctx context.Context) {
 	// If gateway was offline, mark it back online
 	if !app.isGatewayOnline {
 		app.isGatewayOnline = true
-		log.Printf("🟢 App marked as ONLINE - functionality restored")
+		logger.LogInfo("🟢 App marked as ONLINE - functionality restored")
 
 		// Publish online status
 		if err := app.publisher.PublishStatusOnline(ctx); err != nil {
-			log.Printf("⚠️ Error publishing online status: %v", err)
+			logger.LogError("⚠️ Error publishing online status: %v", err)
 		}
 
 		// Publish recovery diagnostic
 		if err := app.publisher.PublishDiagnostic(ctx, DiagnosticOK, "Functionality restored - app back online"); err != nil {
-			log.Printf("⚠️ Error publishing recovery diagnostic: %v", err)
+			logger.LogError("⚠️ Error publishing recovery diagnostic: %v", err)
 		}
 	}
 }
 
 // publishDiscoveryConfigs publishes discovery configurations for Home Assistant
 func (app *Application) publishDiscoveryConfigs(ctx context.Context) error {
-	log.Printf("🔍 Publishing discovery configurations for Home Assistant...")
+	logger.LogDebug("🔍 Publishing discovery configurations for Home Assistant...")
 
 	// Create mock results for discovery
 	var results []*modbus.CommandResult
@@ -422,7 +439,7 @@ func (app *Application) publishDiscoveryConfigs(ctx context.Context) error {
 
 	// Publish diagnostic sensor discovery
 	if err := app.publisher.PublishDiagnosticDiscovery(ctx); err != nil {
-		log.Printf("⚠️ Error publishing diagnostic discovery: %v", err)
+		logger.LogError("⚠️ Error publishing diagnostic discovery: %v", err)
 		// Don't return error - this is not critical
 	}
 
@@ -460,7 +477,7 @@ func main() {
 
 	// Wait for stop signal
 	<-sigChan
-	log.Printf("📢 Stop signal received...")
+	logger.LogInfo("📢 Stop signal received...")
 
 	// Stop application
 	app.Stop()
@@ -474,13 +491,13 @@ func (app *Application) heartbeatLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("🔇 Heartbeat loop stopped")
+			logger.LogDebug("🔇 Heartbeat loop stopped")
 			return
 		case <-ticker.C:
 			// Only send heartbeat if we're currently marked as online
 			if app.isGatewayOnline {
 				if err := app.publisher.PublishStatusOnline(ctx); err != nil {
-					log.Printf("⚠️ Heartbeat failed: %v", err)
+					logger.LogError("⚠️ Heartbeat failed: %v", err)
 				}
 			}
 		}
@@ -501,19 +518,19 @@ func (app *Application) forcedRepublishLoop(ctx context.Context) {
 	if republishHours <= 0 {
 		republishHours = 4 // Default fallback
 	}
-	
+
 	ticker := time.NewTicker(time.Duration(republishHours) * time.Hour)
 	defer ticker.Stop()
 
-	log.Printf("📡 Started forced republish loop for energy sensors (every %d hours)", republishHours)
+	logger.LogInfo("📡 Started forced republish loop for energy sensors (every %d hours)", republishHours)
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("⏹️ Forced republish loop stopped")
+			logger.LogDebug("⏹️ Forced republish loop stopped")
 			return
 		case <-ticker.C:
-			log.Printf("🔄 Running forced republish for energy sensors (interval: %d hours)...", republishHours)
+			logger.LogInfo("🔄 Running forced republish for energy sensors (interval: %d hours)...", republishHours)
 			app.forceRepublishEnergySensors(ctx)
 		}
 	}
@@ -542,8 +559,8 @@ func (app *Application) forceRepublishEnergySensors(ctx context.Context) {
 		app.mu.Unlock()
 
 		if !exists || time.Since(lastPublish) > threshold {
-			log.Printf("🔄 Force republishing %s (last published: %v)", sensorName, lastPublish.Format("15:04:05"))
-			
+			logger.LogInfo("🔄 Force republishing %s (last published: %v)", sensorName, lastPublish.Format("15:04:05"))
+
 			// Execute the command to get current value
 			app.readSingleRegister(ctx, sensorName, "FORCED")
 		}
