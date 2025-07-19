@@ -253,7 +253,7 @@ func (app *Application) readNormalRegisters(ctx context.Context) {
 		if !app.isEnergyRegister(name) {
 			logger.LogTrace("📊 Reading normal register: %s", name)
 			app.readSingleRegister(ctx, name, "📊 Normal")
-			
+
 			// Add delay between register reads to prevent overwhelming gateway
 			time.Sleep(time.Duration(app.config.Modbus.RegisterDelay) * time.Millisecond)
 		}
@@ -267,7 +267,7 @@ func (app *Application) readEnergyRegisters(ctx context.Context) {
 		if app.isEnergyRegister(name) {
 			logger.LogTrace("⚡ Reading energy register: %s", name)
 			app.readSingleRegister(ctx, name, "⚡ Energy")
-			
+
 			// Add delay between register reads to prevent overwhelming gateway
 			time.Sleep(time.Duration(app.config.Modbus.RegisterDelay) * time.Millisecond)
 		}

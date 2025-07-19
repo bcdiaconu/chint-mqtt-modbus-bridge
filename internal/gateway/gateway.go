@@ -19,7 +19,7 @@ type USRGateway struct {
 	responseChan chan []byte
 	mu           sync.RWMutex
 	connected    bool
-	commandMutex sync.Mutex  // Synchronize command/response pairs
+	commandMutex sync.Mutex // Synchronize command/response pairs
 }
 
 // NewUSRGateway creates a new USR-DR164 gateway
@@ -327,12 +327,20 @@ func (g *USRGateway) SendCommandAndWaitForResponse(ctx context.Context, slaveID 
 	// Lock to ensure only one command/response cycle at a time
 	g.commandMutex.Lock()
 	defer g.commandMutex.Unlock()
-	
+
 	// Send command
 	if err := g.SendCommand(ctx, slaveID, functionCode, address, count); err != nil {
 		return nil, err
 	}
-	
+
 	// Wait for response
-	return g.WaitForResponse(ctx, timeoutSeconds)
+	response, err := g.WaitForResponse(ctx, timeoutSeconds)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add small delay between commands to prevent gateway overload
+	time.Sleep(50 * time.Millisecond)
+
+	return response, nil
 }

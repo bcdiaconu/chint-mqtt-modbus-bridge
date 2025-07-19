@@ -60,12 +60,15 @@ type ModbusConfig struct {
 // Register represents a Modbus register configuration
 // Used by Strategy Pattern implementations
 type Register struct {
-	Name        string `yaml:"name"`
-	Address     uint16 `yaml:"address"`
-	Unit        string `yaml:"unit"`
-	DeviceClass string `yaml:"device_class"`
-	StateClass  string `yaml:"state_class"`
-	HATopic     string `yaml:"ha_topic"`
+	Name          string   `yaml:"name"`
+	Address       uint16   `yaml:"address"`
+	Unit          string   `yaml:"unit"`
+	DeviceClass   string   `yaml:"device_class"`
+	StateClass    string   `yaml:"state_class"`
+	HATopic       string   `yaml:"ha_topic"`
+	Min           *float64 `yaml:"min,omitempty"`              // Minimum valid value (optional)
+	Max           *float64 `yaml:"max,omitempty"`              // Maximum valid value (optional)
+	MaxKwhPerHour *float64 `yaml:"max_kwh_per_hour,omitempty"` // Maximum kWh change per hour for energy registers (optional)
 }
 
 // LoadConfig loads configuration from specified file

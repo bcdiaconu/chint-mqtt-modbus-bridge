@@ -35,7 +35,7 @@ func (s *StatusTopic) PublishState(ctx context.Context, client mqtt.Client, resu
 	}
 
 	// Validate the result before publishing
-	if err := s.ValidateData(result); err != nil {
+	if err := s.ValidateData(result, nil); err != nil {
 		return fmt.Errorf("invalid status data: %w", err)
 	}
 
@@ -67,7 +67,7 @@ func (s *StatusTopic) GetTopicPrefix() string {
 }
 
 // ValidateData validates status data
-func (s *StatusTopic) ValidateData(result *modbus.CommandResult) error {
+func (s *StatusTopic) ValidateData(result *modbus.CommandResult, register *config.Register) error {
 	// Status values should be 0 or 1
 	if result.Value < 0 || result.Value > 1 {
 		return fmt.Errorf("invalid status value: %.3f (expected 0 or 1)", result.Value)

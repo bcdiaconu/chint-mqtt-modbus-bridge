@@ -79,7 +79,7 @@ func (f *FrequencyTopic) PublishState(ctx context.Context, client mqtt.Client, r
 	}
 
 	// Validate the result before publishing
-	if err := f.ValidateData(result); err != nil {
+	if err := f.ValidateData(result, nil); err != nil {
 		return fmt.Errorf("invalid frequency data: %w", err)
 	}
 
@@ -114,19 +114,14 @@ func (f *FrequencyTopic) GetTopicPrefix() string {
 }
 
 // ValidateData validates frequency sensor data before publishing
-func (f *FrequencyTopic) ValidateData(result *modbus.CommandResult) error {
-	// Check for invalid numeric values
+func (f *FrequencyTopic) ValidateData(result *modbus.CommandResult, register *config.Register) error {
+	// Check for invalid numeric values (NaN, Inf)
 	if math.IsNaN(result.Value) {
 		return fmt.Errorf("frequency value is NaN for sensor %s", result.Name)
 	}
 
 	if math.IsInf(result.Value, 0) {
 		return fmt.Errorf("frequency value is infinite for sensor %s", result.Name)
-	}
-
-	// Frequency-specific validation - relaxed range for debugging
-	if result.Value < 0 || result.Value > 1000 {
-		return fmt.Errorf("frequency value out of bounds: %.3f Hz (expected 0-1000Hz)", result.Value)
 	}
 
 	// Check required fields
@@ -136,6 +131,16 @@ func (f *FrequencyTopic) ValidateData(result *modbus.CommandResult) error {
 
 	if result.Topic == "" {
 		return fmt.Errorf("frequency sensor topic is empty")
+	}
+
+	// Apply min/max validation from register config if specified
+	if register != nil {
+		if register.Min != nil && result.Value < *register.Min {
+			return fmt.Errorf("frequency value %.3f Hz below minimum threshold %.3f Hz", result.Value, *register.Min)
+		}
+		if register.Max != nil && result.Value > *register.Max {
+			return fmt.Errorf("frequency value %.3f Hz above maximum threshold %.3f Hz", result.Value, *register.Max)
+		}
 	}
 
 	return nil

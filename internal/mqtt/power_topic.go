@@ -79,7 +79,7 @@ func (p *PowerTopic) PublishState(ctx context.Context, client mqtt.Client, resul
 	}
 
 	// Validate the result before publishing
-	if err := p.ValidateData(result); err != nil {
+	if err := p.ValidateData(result, nil); err != nil {
 		return fmt.Errorf("invalid power data: %w", err)
 	}
 
@@ -114,30 +114,14 @@ func (p *PowerTopic) GetTopicPrefix() string {
 }
 
 // ValidateData validates power sensor data before publishing
-func (p *PowerTopic) ValidateData(result *modbus.CommandResult) error {
-	// Check for invalid numeric values
+func (p *PowerTopic) ValidateData(result *modbus.CommandResult, register *config.Register) error {
+	// Check for invalid numeric values (NaN, Inf)
 	if math.IsNaN(result.Value) {
 		return fmt.Errorf("power value is NaN for sensor %s", result.Name)
 	}
 
 	if math.IsInf(result.Value, 0) {
 		return fmt.Errorf("power value is infinite for sensor %s", result.Name)
-	}
-
-	// Power-specific validation - handle different power types
-	switch result.DeviceClass {
-	case "power": // Active power
-		if result.Value < -100000 || result.Value > 100000 {
-			return fmt.Errorf("active power value out of reasonable bounds: %.3f W (expected -100kW to +100kW)", result.Value)
-		}
-	case "apparent_power": // Apparent power
-		if result.Value < 0 || result.Value > 100000 {
-			return fmt.Errorf("apparent power value out of reasonable bounds: %.3f VA (expected 0-100kVA)", result.Value)
-		}
-	case "reactive_power": // Reactive power
-		if result.Value < -100000 || result.Value > 100000 {
-			return fmt.Errorf("reactive power value out of reasonable bounds: %.3f var (expected -100kvar to +100kvar)", result.Value)
-		}
 	}
 
 	// Check required fields
@@ -147,6 +131,16 @@ func (p *PowerTopic) ValidateData(result *modbus.CommandResult) error {
 
 	if result.Topic == "" {
 		return fmt.Errorf("power sensor topic is empty")
+	}
+
+	// Apply min/max validation from register config if specified
+	if register != nil {
+		if register.Min != nil && result.Value < *register.Min {
+			return fmt.Errorf("power value %.3f W below minimum threshold %.3f W", result.Value, *register.Min)
+		}
+		if register.Max != nil && result.Value > *register.Max {
+			return fmt.Errorf("power value %.3f W above maximum threshold %.3f W", result.Value, *register.Max)
+		}
 	}
 
 	return nil

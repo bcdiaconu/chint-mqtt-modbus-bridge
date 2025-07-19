@@ -45,6 +45,8 @@ registers:
     device_class: "voltage"
     state_class: "measurement"
     ha_topic: "sensor/energy_meter/voltage"
+    min: 100.0      # Minimum acceptable voltage
+    max: 300.0      # Maximum acceptable voltage
     
   frequency:
     name: "Frequency"
@@ -53,6 +55,8 @@ registers:
     device_class: "frequency"
     state_class: "measurement"
     ha_topic: "sensor/energy_meter/frequency"
+    min: 45.0       # Minimum acceptable frequency
+    max: 65.0       # Maximum acceptable frequency
     
   current:
     name: "Current"
@@ -61,6 +65,8 @@ registers:
     device_class: "current"
     state_class: "measurement"
     ha_topic: "sensor/energy_meter/current"
+    min: 0.0        # Minimum acceptable current
+    max: 100.0      # Maximum acceptable current
     
   energy_total:
     name: "Active Energy"
@@ -69,6 +75,7 @@ registers:
     device_class: "energy"
     state_class: "total_increasing"
     ha_topic: "sensor/energy_meter/energy_total"
+    max_kwh_per_hour: 20.0    # Maximum 20 kWh change per hour
     
   energy_imported:
     name: "Imported Energy"
@@ -77,6 +84,7 @@ registers:
     device_class: "energy"
     state_class: "total_increasing"
     ha_topic: "sensor/energy_meter/energy_imported"
+    max_kwh_per_hour: 64.0    # Maximum 64 kWh import per hour (high consumption)
     
   energy_exported:
     name: "Exported Energy"
@@ -85,6 +93,7 @@ registers:
     device_class: "energy"
     state_class: "total_increasing"
     ha_topic: "sensor/energy_meter/energy_exported"
+    max_kwh_per_hour: 3.0     # Maximum 3 kWh export per hour (3kW solar panel)
     
   power_factor:
     name: "Power Factor"
@@ -93,6 +102,8 @@ registers:
     device_class: "power_factor"
     state_class: "measurement"
     ha_topic: "sensor/energy_meter/power_factor"
+    min: -1.0       # Minimum power factor
+    max: 1.0        # Maximum power factor
     
   power_apparent:
     name: "Apparent Power"
@@ -101,6 +112,8 @@ registers:
     device_class: "apparent_power"
     state_class: "measurement"
     ha_topic: "sensor/energy_meter/power_apparent"
+    min: 0.0        # Minimum power
+    max: 100000.0   # Maximum 100kVA
     
   power_active:
     name: "Active Power"
@@ -109,6 +122,8 @@ registers:
     device_class: "power"
     state_class: "measurement"
     ha_topic: "sensor/energy_meter/power_active"
+    min: -50000.0   # Minimum power (can be negative for export)
+    max: 50000.0    # Maximum 50kW
 
   power_reactive:
     name: "Reactive Power"

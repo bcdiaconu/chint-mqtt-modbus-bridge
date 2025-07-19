@@ -79,7 +79,7 @@ func (pf *PowerFactorTopic) PublishState(ctx context.Context, client mqtt.Client
 	}
 
 	// Validate the result before publishing
-	if err := pf.ValidateData(result); err != nil {
+	if err := pf.ValidateData(result, nil); err != nil {
 		return fmt.Errorf("invalid power factor data: %w", err)
 	}
 
@@ -114,19 +114,14 @@ func (pf *PowerFactorTopic) GetTopicPrefix() string {
 }
 
 // ValidateData validates power factor sensor data before publishing
-func (pf *PowerFactorTopic) ValidateData(result *modbus.CommandResult) error {
-	// Check for invalid numeric values
+func (pf *PowerFactorTopic) ValidateData(result *modbus.CommandResult, register *config.Register) error {
+	// Check for invalid numeric values (NaN, Inf)
 	if math.IsNaN(result.Value) {
 		return fmt.Errorf("power factor value is NaN for sensor %s", result.Name)
 	}
 
 	if math.IsInf(result.Value, 0) {
 		return fmt.Errorf("power factor value is infinite for sensor %s", result.Name)
-	}
-
-	// Power factor specific validation - relaxed range for debugging
-	if result.Value < 0 || result.Value > 100 {
-		return fmt.Errorf("power factor value out of bounds: %.3f (expected 0-100)", result.Value)
 	}
 
 	// Check required fields
@@ -136,6 +131,16 @@ func (pf *PowerFactorTopic) ValidateData(result *modbus.CommandResult) error {
 
 	if result.Topic == "" {
 		return fmt.Errorf("power factor sensor topic is empty")
+	}
+
+	// Apply min/max validation from register config if specified
+	if register != nil {
+		if register.Min != nil && result.Value < *register.Min {
+			return fmt.Errorf("power factor value %.3f below minimum threshold %.3f", result.Value, *register.Min)
+		}
+		if register.Max != nil && result.Value > *register.Max {
+			return fmt.Errorf("power factor value %.3f above maximum threshold %.3f", result.Value, *register.Max)
+		}
 	}
 
 	return nil

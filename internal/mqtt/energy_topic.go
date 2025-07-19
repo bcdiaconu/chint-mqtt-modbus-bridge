@@ -7,6 +7,7 @@ import (
 	"math"
 	"mqtt-modbus-bridge/internal/config"
 	"mqtt-modbus-bridge/internal/modbus"
+	"sync"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -14,13 +15,18 @@ import (
 
 // EnergyTopic handles energy sensor publishing (total, imported, exported)
 type EnergyTopic struct {
-	config *config.HAConfig
+	config        *config.HAConfig
+	lastValues    map[string]float64   // Store last valid values by sensor name
+	lastTimestamp map[string]time.Time // Store last read timestamps by sensor name
+	mutex         sync.RWMutex         // Protect concurrent access to maps
 }
 
 // NewEnergyTopic creates a new energy topic handler
 func NewEnergyTopic(config *config.HAConfig) *EnergyTopic {
 	return &EnergyTopic{
-		config: config,
+		config:        config,
+		lastValues:    make(map[string]float64),
+		lastTimestamp: make(map[string]time.Time),
 	}
 }
 
@@ -79,7 +85,7 @@ func (e *EnergyTopic) PublishState(ctx context.Context, client mqtt.Client, resu
 	}
 
 	// Validate the result before publishing
-	if err := e.ValidateData(result); err != nil {
+	if err := e.ValidateData(result, nil); err != nil {
 		return fmt.Errorf("invalid energy data: %w", err)
 	}
 
@@ -114,8 +120,8 @@ func (e *EnergyTopic) GetTopicPrefix() string {
 }
 
 // ValidateData validates energy sensor data before publishing
-func (e *EnergyTopic) ValidateData(result *modbus.CommandResult) error {
-	// Check for invalid numeric values
+func (e *EnergyTopic) ValidateData(result *modbus.CommandResult, register *config.Register) error {
+	// Basic validation - check for invalid numeric values
 	if math.IsNaN(result.Value) {
 		return fmt.Errorf("energy value is NaN for sensor %s", result.Name)
 	}
@@ -141,6 +147,56 @@ func (e *EnergyTopic) ValidateData(result *modbus.CommandResult) error {
 	if result.Topic == "" {
 		return fmt.Errorf("energy sensor topic is empty")
 	}
+
+	// Time-based energy filtering to prevent impossible values
+	e.mutex.Lock()
+	defer e.mutex.Unlock()
+
+	sensorName := result.Name
+	currentTime := time.Now()
+	currentValue := result.Value
+
+	// Check if we have a previous reading for this sensor
+	if lastValue, exists := e.lastValues[sensorName]; exists {
+		if lastTime, timeExists := e.lastTimestamp[sensorName]; timeExists {
+
+			// For import/export energy, prevent values from decreasing (they should only increase)
+			isImportOrExport := sensorName == "Imported Energy" || sensorName == "Exported Energy"
+			if isImportOrExport && currentValue < lastValue {
+				return fmt.Errorf("energy value decreased for %s: %.3f kWh -> %.3f kWh (should only increase)",
+					sensorName, lastValue, currentValue)
+			}
+
+			// Calculate time elapsed since last reading
+			timeDiff := currentTime.Sub(lastTime)
+			hoursElapsed := timeDiff.Hours()
+
+			// Only validate if time has passed (avoid division by zero)
+			if hoursElapsed > 0 {
+				// Calculate energy change
+				energyChange := math.Abs(currentValue - lastValue)
+
+				// Get maximum allowed change per hour from register config
+				var maxChangePerHour float64 = 20.0 // Default maximum 20 kWh per hour
+				if register != nil && register.MaxKwhPerHour != nil {
+					maxChangePerHour = *register.MaxKwhPerHour
+				}
+
+				// Calculate maximum allowed change for this time period
+				maxAllowedChange := maxChangePerHour * hoursElapsed
+
+				// Check if change exceeds maximum allowed
+				if energyChange > maxAllowedChange {
+					return fmt.Errorf("energy change too large for %s: %.3f kWh in %.2f hours (max: %.3f kWh/h = %.3f kWh allowed)",
+						sensorName, energyChange, hoursElapsed, maxChangePerHour, maxAllowedChange)
+				}
+			}
+		}
+	}
+
+	// Store current value and timestamp as last valid reading
+	e.lastValues[sensorName] = currentValue
+	e.lastTimestamp[sensorName] = currentTime
 
 	return nil
 }

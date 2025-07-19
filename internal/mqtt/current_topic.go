@@ -79,7 +79,7 @@ func (c *CurrentTopic) PublishState(ctx context.Context, client mqtt.Client, res
 	}
 
 	// Validate the result before publishing
-	if err := c.ValidateData(result); err != nil {
+	if err := c.ValidateData(result, nil); err != nil {
 		return fmt.Errorf("invalid current data: %w", err)
 	}
 
@@ -114,19 +114,14 @@ func (c *CurrentTopic) GetTopicPrefix() string {
 }
 
 // ValidateData validates current sensor data before publishing
-func (c *CurrentTopic) ValidateData(result *modbus.CommandResult) error {
-	// Check for invalid numeric values
+func (c *CurrentTopic) ValidateData(result *modbus.CommandResult, register *config.Register) error {
+	// Check for invalid numeric values (NaN, Inf)
 	if math.IsNaN(result.Value) {
 		return fmt.Errorf("current value is NaN for sensor %s", result.Name)
 	}
 
 	if math.IsInf(result.Value, 0) {
 		return fmt.Errorf("current value is infinite for sensor %s", result.Name)
-	}
-
-	// Current-specific validation - typical range for residential/commercial
-	if result.Value < 0 || result.Value > 1000 {
-		return fmt.Errorf("current value out of reasonable bounds: %.3f A (expected 0-1000A)", result.Value)
 	}
 
 	// Check required fields
@@ -136,6 +131,16 @@ func (c *CurrentTopic) ValidateData(result *modbus.CommandResult) error {
 
 	if result.Topic == "" {
 		return fmt.Errorf("current sensor topic is empty")
+	}
+
+	// Apply min/max validation from register config if specified
+	if register != nil {
+		if register.Min != nil && result.Value < *register.Min {
+			return fmt.Errorf("current value %.3f A below minimum threshold %.3f A", result.Value, *register.Min)
+		}
+		if register.Max != nil && result.Value > *register.Max {
+			return fmt.Errorf("current value %.3f A above maximum threshold %.3f A", result.Value, *register.Max)
+		}
 	}
 
 	return nil

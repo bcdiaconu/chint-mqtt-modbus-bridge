@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	configpkg "mqtt-modbus-bridge/internal/config"
+	"mqtt-modbus-bridge/internal/config"
 	"mqtt-modbus-bridge/internal/logger"
 	"mqtt-modbus-bridge/internal/modbus"
 	"time"
@@ -15,11 +15,11 @@ import (
 // DiagnosticTopic handles Home Assistant diagnostic sensor publishing
 // DiagnosticTopic handles diagnostic-related publishing
 type DiagnosticTopic struct {
-	config *configpkg.HAConfig
+	config *config.HAConfig
 }
 
 // NewDiagnosticTopic creates a new diagnostic topic handler
-func NewDiagnosticTopic(config *configpkg.HAConfig) *DiagnosticTopic {
+func NewDiagnosticTopic(config *config.HAConfig) *DiagnosticTopic {
 	return &DiagnosticTopic{
 		config: config,
 	}
@@ -81,7 +81,7 @@ func (d *DiagnosticTopic) PublishState(ctx context.Context, client mqtt.Client, 
 	}
 
 	// Validate the result before publishing
-	if err := d.ValidateData(result); err != nil {
+	if err := d.ValidateData(result, nil); err != nil {
 		return fmt.Errorf("invalid diagnostic data: %w", err)
 	}
 
@@ -117,7 +117,7 @@ func (d *DiagnosticTopic) GetTopicPrefix() string {
 }
 
 // ValidateData validates diagnostic data
-func (d *DiagnosticTopic) ValidateData(result *modbus.CommandResult) error {
+func (d *DiagnosticTopic) ValidateData(result *modbus.CommandResult, register *config.Register) error {
 	// Diagnostic code should be a valid integer
 	if result.Value < 0 || result.Value > 9999 {
 		return fmt.Errorf("invalid diagnostic code: %.0f", result.Value)

@@ -79,7 +79,7 @@ func (v *VoltageTopic) PublishState(ctx context.Context, client mqtt.Client, res
 	}
 
 	// Validate the result before publishing
-	if err := v.ValidateData(result); err != nil {
+	if err := v.ValidateData(result, nil); err != nil {
 		return fmt.Errorf("invalid voltage data: %w", err)
 	}
 
@@ -114,19 +114,14 @@ func (v *VoltageTopic) GetTopicPrefix() string {
 }
 
 // ValidateData validates voltage sensor data before publishing
-func (v *VoltageTopic) ValidateData(result *modbus.CommandResult) error {
-	// Check for invalid numeric values
+func (v *VoltageTopic) ValidateData(result *modbus.CommandResult, register *config.Register) error {
+	// Check for invalid numeric values (NaN, Inf)
 	if math.IsNaN(result.Value) {
 		return fmt.Errorf("voltage value is NaN for sensor %s", result.Name)
 	}
 
 	if math.IsInf(result.Value, 0) {
 		return fmt.Errorf("voltage value is infinite for sensor %s", result.Name)
-	}
-
-	// Voltage-specific validation - typical range for electrical grid
-	if result.Value < 0 || result.Value > 1000 {
-		return fmt.Errorf("voltage value out of reasonable bounds: %.3f V (expected 0-1000V)", result.Value)
 	}
 
 	// Check required fields
@@ -136,6 +131,16 @@ func (v *VoltageTopic) ValidateData(result *modbus.CommandResult) error {
 
 	if result.Topic == "" {
 		return fmt.Errorf("voltage sensor topic is empty")
+	}
+
+	// Apply min/max validation from register config if specified
+	if register != nil {
+		if register.Min != nil && result.Value < *register.Min {
+			return fmt.Errorf("voltage value %.3f V below minimum threshold %.3f V", result.Value, *register.Min)
+		}
+		if register.Max != nil && result.Value > *register.Max {
+			return fmt.Errorf("voltage value %.3f V above maximum threshold %.3f V", result.Value, *register.Max)
+		}
 	}
 
 	return nil

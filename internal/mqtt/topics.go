@@ -13,7 +13,7 @@ type TopicHandler interface {
 	PublishDiscovery(ctx context.Context, client paho.Client, result *modbus.CommandResult) error
 	PublishState(ctx context.Context, client paho.Client, result *modbus.CommandResult) error
 	GetTopicPrefix() string
-	ValidateData(result *modbus.CommandResult) error
+	ValidateData(result *modbus.CommandResult, register *config.Register) error
 }
 
 // TopicContext manages the topic handlers

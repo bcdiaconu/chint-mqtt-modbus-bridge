@@ -79,7 +79,7 @@ func (s *SensorTopic) PublishState(ctx context.Context, client mqtt.Client, resu
 	}
 
 	// Validate the result before publishing
-	if err := s.ValidateData(result); err != nil {
+	if err := s.ValidateData(result, nil); err != nil {
 		return fmt.Errorf("invalid sensor data: %w", err)
 	}
 
@@ -114,7 +114,7 @@ func (s *SensorTopic) GetTopicPrefix() string {
 }
 
 // ValidateData validates sensor data before publishing
-func (s *SensorTopic) ValidateData(result *modbus.CommandResult) error {
+func (s *SensorTopic) ValidateData(result *modbus.CommandResult, register *config.Register) error {
 	// Check for invalid numeric values
 	if math.IsNaN(result.Value) {
 		return fmt.Errorf("value is NaN for sensor %s", result.Name)
