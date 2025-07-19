@@ -23,7 +23,7 @@ A robust bridge between USR-DR164 Modbus-MQTT Gateway and Home Assistant, implem
 
 ## Architecture
 
-```
+```md
 ├── cmd/
 │   └── main.go                    # Main application
 ├── internal/
@@ -101,9 +101,9 @@ Create a configuration file in one of these locations:
 
 - `/etc/mqtt-modbus-bridge/config.yaml`
 - `/etc/mqtt-modbus-bridge.yaml`
-- `./config.yam`
+- `./config.yaml`
 
-You can find a sample configuration file in the project directory as `config-sample.yaml`.
+You can find a sample configuration file in the project directory as `config-sample.yaml`. Copy this file to your desired location and modify it according to your setup requirements.
 
 ## Usage
 
@@ -122,7 +122,7 @@ You can find a sample configuration file in the project directory as `config-sam
 
 The application logs all operations:
 
-```
+```md
 🚀 Starting MQTT-Modbus Bridge...
 ✅ Strategy registered: voltage (Voltage)
 ✅ Strategy registered: frequency (Frequency)
@@ -219,6 +219,97 @@ mqtt:
 ✅ Gateway successfully connected to MQTT broker after 3 attempts
 ✅ HA Publisher successfully connected to MQTT broker after 3 attempts
 ```
+
+## MQTT Filtering and Data Processing
+
+The bridge implements sophisticated MQTT message filtering and processing to ensure data reliability and accuracy:
+
+### Message Filtering
+
+The gateway automatically filters incoming MQTT messages to process only valid input data:
+
+- **Topic Filtering**: Only processes messages from the configured `data_topic` (e.g., `D4AD20B75646/data`)
+- **Protocol Filtering**: Validates Modbus RTU response format:
+  - Checks for valid function code (0x03 - Read Holding Registers)
+  - Verifies minimum message length (5 bytes)
+  - Extracts payload data starting from byte position 3
+  - Ignores malformed or incomplete messages
+
+### Response Processing
+
+```go
+// Example: Processing a valid Modbus response
+// Input:  [01 03 04 43 66 66 66 4E 6C] (9 bytes)
+// Output: [43 66 66 66] (4 bytes of actual data)
+```
+
+### Error Handling
+
+- **Channel Management**: Uses buffered channels to prevent blocking on response processing
+- **Overflow Protection**: Automatically discards responses when processing queue is full
+- **Logging**: Comprehensive logging of all filtering decisions and data transformations
+
+## Data Validation
+
+The bridge implements multi-layer data validation to ensure data quality and system reliability:
+
+### Input Validation
+
+**Numeric Validation:**
+
+- Checks for `NaN` (Not a Number) values
+- Detects infinite values (`+Inf`, `-Inf`)
+- Validates minimum data length requirements (4 bytes for float32)
+
+**Field Validation:**
+
+- Ensures required fields (name, topic, unit) are present
+- Validates topic format and structure
+- Checks device class and state class values
+
+### Range Validation
+
+**Configuration-Based Limits:**
+
+```yaml
+registers:
+  voltage:
+    min: 100.0      # Minimum acceptable voltage
+    max: 300.0      # Maximum acceptable voltage
+```
+
+**Dynamic Quality Assessment:**
+
+- **Voltage Quality**: Categorizes readings as excellent (220-240V), good (210-250V), acceptable (180-270V), or poor
+- **Stability Checks**: Identifies unstable voltage conditions outside normal ranges
+- **Threshold Alerts**: Logs warnings when values exceed configured thresholds
+
+### Validation Error Handling
+
+**Error Responses:**
+
+```text
+❌ Validation failed: voltage value 350.5 V above maximum threshold 300.0 V
+❌ Validation failed: current value is NaN for sensor Current_L1
+❌ Validation failed: sensor name is empty
+```
+
+**Recovery Actions:**
+
+- Skips publishing invalid data to prevent Home Assistant errors
+- Maintains diagnostic information for troubleshooting
+- Continues processing other valid sensors
+- Logs detailed error information for analysis
+
+### Topic-Specific Validation
+
+Each sensor type implements custom validation rules:
+
+- **Voltage**: Range validation (100-300V), stability assessment
+- **Current**: Non-negative validation, overload detection
+- **Power**: Calculation validation, power factor correlation
+- **Energy**: Monotonic increase validation, consumption rate limits
+- **Frequency**: Grid frequency validation (45-65Hz)
 
 ## Development
 
