@@ -3,8 +3,8 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"log"
 	"mqtt-modbus-bridge/internal/config"
+	"mqtt-modbus-bridge/internal/logger"
 	"sync"
 	"time"
 
@@ -43,13 +43,13 @@ func NewUSRGateway(cfg *config.MQTTConfig) *USRGateway {
 		gateway.mu.Lock()
 		gateway.connected = true
 		gateway.mu.Unlock()
-		log.Printf("✅ Gateway connected to MQTT broker")
+		logger.LogInfo("Gateway connected to MQTT broker")
 
 		// Subscribe to data topic
 		if token := client.Subscribe(cfg.Gateway.DataTopic, 0, gateway.onMessage); token.Wait() && token.Error() != nil {
-			log.Printf("❌ Error subscribing to %s: %v", cfg.Gateway.DataTopic, token.Error())
+			logger.LogError("Error subscribing to %s: %v", cfg.Gateway.DataTopic, token.Error())
 		} else {
-			log.Printf("📡 Gateway subscribed to: %s", cfg.Gateway.DataTopic)
+			logger.LogInfo("Gateway subscribed to: %s", cfg.Gateway.DataTopic)
 		}
 	})
 
@@ -57,7 +57,7 @@ func NewUSRGateway(cfg *config.MQTTConfig) *USRGateway {
 		gateway.mu.Lock()
 		gateway.connected = false
 		gateway.mu.Unlock()
-		log.Printf("❌ Gateway disconnected: %v", err)
+		logger.LogError("Gateway disconnected: %v", err)
 	})
 
 	gateway.client = mqtt.NewClient(opts)
@@ -73,11 +73,11 @@ func (g *USRGateway) Connect(ctx context.Context) error {
 
 	attempt := 1
 	for {
-		log.Printf("🔄 Attempting to connect gateway to MQTT broker (attempt %d)...", attempt)
+		logger.LogDebug("Attempting to connect gateway to MQTT broker (attempt %d)...", attempt)
 
 		if token := g.client.Connect(); token.Wait() && token.Error() != nil {
-			log.Printf("❌ Gateway connection failed (attempt %d): %v", attempt, token.Error())
-			log.Printf("⏳ Retrying in %.0f seconds...", retryDelay.Seconds())
+			logger.LogError("Gateway connection failed (attempt %d): %v", attempt, token.Error())
+			logger.LogInfo("Retrying in %.0f seconds...", retryDelay.Seconds())
 			// Wait for retry delay or context cancellation
 			select {
 			case <-ctx.Done():
@@ -89,7 +89,7 @@ func (g *USRGateway) Connect(ctx context.Context) error {
 		}
 
 		// Connection successful, wait for full connection establishment
-		log.Printf("🔌 Gateway connection token successful, waiting for connection establishment...")
+		logger.LogDebug("Gateway connection token successful, waiting for connection establishment...")
 
 		// Wait for connection with timeout
 		connected := false
@@ -106,13 +106,13 @@ func (g *USRGateway) Connect(ctx context.Context) error {
 		}
 
 		if connected {
-			log.Printf("✅ Gateway successfully connected to MQTT broker after %d attempts", attempt)
+			logger.LogInfo("Gateway successfully connected to MQTT broker after %d attempts", attempt)
 			return nil
 		}
 
 		// Connection establishment timeout - retry with better error handling
-		log.Printf("⏰ Gateway connection establishment timeout (attempt %d)", attempt)
-		log.Printf("⏳ Retrying in %.0f seconds...", retryDelay.Seconds())
+		logger.LogWarn("Gateway connection establishment timeout (attempt %d)", attempt)
+		logger.LogInfo("Retrying in %.0f seconds...", retryDelay.Seconds())
 
 		// Ensure clean disconnection before retry
 		if g.client.IsConnected() {
@@ -164,7 +164,7 @@ func (g *USRGateway) SendCommand(ctx context.Context, slaveID uint8, functionCod
 	defer cancel()
 
 	// Send command
-	log.Printf("📤 Gateway sending modbus command: %02X to topic: %s", command, g.config.Gateway.CmdTopic)
+	logger.LogDebug("Gateway sending modbus command: %02X to topic: %s", command, g.config.Gateway.CmdTopic)
 
 	token := g.client.Publish(g.config.Gateway.CmdTopic, 0, false, command)
 
@@ -230,7 +230,7 @@ func (g *USRGateway) Close() {
 // onMessage handles incoming MQTT messages
 func (g *USRGateway) onMessage(client mqtt.Client, msg mqtt.Message) {
 	data := msg.Payload()
-	log.Printf("📨 Gateway received message on %s: %02X", msg.Topic(), data)
+	logger.LogTrace("Gateway received message on %s: %02X", msg.Topic(), data)
 
 	// Extract useful data from Modbus response
 	if len(data) >= 5 {
@@ -240,13 +240,13 @@ func (g *USRGateway) onMessage(client mqtt.Client, msg mqtt.Message) {
 			byteCount := int(data[2])
 			if len(data) >= 3+byteCount {
 				actualData := data[3 : 3+byteCount]
-				log.Printf("📥 Gateway received response: %02X", actualData)
+				logger.LogDebug("Gateway received response: %02X", actualData)
 
 				// Send data to channel
 				select {
 				case g.responseChan <- actualData:
 				default:
-					log.Printf("⚠️ Response channel full, response ignored")
+					logger.LogWarn("Response channel full, response ignored")
 				}
 			}
 		}

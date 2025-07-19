@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"mqtt-modbus-bridge/internal/config"
 	"mqtt-modbus-bridge/internal/gateway"
 	"mqtt-modbus-bridge/internal/logger"
@@ -66,7 +65,7 @@ func NewApplication(configPath string) (*Application, error) {
 
 	// Initialize logging with level
 	logger.GlobalLogging = &cfg.Logging
-	logger.LogInfo("🔧 Logging initialized with level: %s", cfg.Logging.Level)
+	logger.LogStartup("🔧 Logging initialized with level: %s", cfg.Logging.Level)
 
 	// Create gateway
 	gatewayInstance := gateway.NewUSRGateway(&cfg.MQTT)
@@ -449,9 +448,6 @@ func (app *Application) publishDiscoveryConfigs(ctx context.Context) error {
 }
 
 func main() {
-	// Configure logging
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-
 	// Context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -480,7 +476,8 @@ func main() {
 	// Create application
 	app, err := NewApplication(configPath)
 	if err != nil {
-		log.Fatalf("❌ Application creation error: %v", err)
+		logger.LogError("Application creation error: %v", err)
+		os.Exit(1)
 	}
 
 	// Run diagnostic mode if requested
@@ -489,17 +486,20 @@ func main() {
 
 		// Connect gateway for diagnostic
 		if err := app.gateway.Connect(ctx); err != nil {
-			log.Fatalf("❌ Gateway connection error: %v", err)
+			logger.LogError("Gateway connection error: %v", err)
+			os.Exit(1)
 		}
 
 		// Connect publisher for diagnostic
 		if err := app.publisher.Connect(ctx); err != nil {
-			log.Fatalf("❌ Publisher connection error: %v", err)
+			logger.LogError("Publisher connection error: %v", err)
+			os.Exit(1)
 		}
 
 		// Run diagnostic tests
 		if err := app.DiagnosticMode(ctx); err != nil {
-			log.Fatalf("❌ Diagnostic failed: %v", err)
+			logger.LogError("Diagnostic failed: %v", err)
+			os.Exit(1)
 		}
 
 		logger.LogInfo("✅ Diagnostic completed successfully")
@@ -508,7 +508,8 @@ func main() {
 
 	// Start application
 	if err := app.Start(ctx); err != nil {
-		log.Fatalf("❌ Application start error: %v", err)
+		logger.LogError("Application start error: %v", err)
+		os.Exit(1)
 	}
 
 	// Wait for stop signal

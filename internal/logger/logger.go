@@ -122,6 +122,11 @@ func (l *Logger) Trace(format string, args ...interface{}) {
 	}
 }
 
+// LogStartup logs startup messages that should always be visible regardless of log level
+func LogStartup(format string, args ...interface{}) {
+	log.Printf("🔧 "+format, args...)
+}
+
 // Helper functions for global logging
 func LogError(format string, args ...interface{}) {
 	if GlobalLogging != nil && shouldLog(strings.ToLower(GlobalLogging.Level), LogLevelError) {
