@@ -37,7 +37,10 @@ func (g *EnergyGroup) Execute(ctx context.Context, gateway modbus.Gateway, slave
 			maxAddr = reg.Address
 		}
 	}
-	regCount := ((maxAddr - minAddr) / 2) + 2 // assuming each value is 2 registers (4 bytes)
+	// Calculate register count: addresses are in register units (each address = 1 register = 2 bytes)
+	// Each float32 value occupies 2 consecutive Modbus registers
+	// maxAddr points to the start of the last value, so we need to add 2 more registers for it
+	regCount := (maxAddr - minAddr) + 2
 	return gateway.SendCommandAndWaitForResponse(ctx, slaveID, 0x03, minAddr, regCount, 5)
 }
 
