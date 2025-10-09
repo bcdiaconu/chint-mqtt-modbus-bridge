@@ -21,32 +21,59 @@ A robust bridge between USR-DR164 Modbus-MQTT Gateway and Home Assistant, implem
 - **Comprehensive Logging**: Detailed monitoring of all operations
 - **Graceful Shutdown**: Safe shutdown with complete cleanup
 
-## Architecture
+## Project Structure
 
 ```md
-├── cmd/
-│   └── main.go                    # Main application
-├── internal/
-│   ├── config/                    # Configuration management
-│   │   └── config.go
-│   ├── modbus/                    # Command Pattern for Modbus operations
-│   │   ├── interfaces.go          # ModbusCommand interface and Gateway interface
-│   │   ├── types.go               # Common types (CommandResult, CommandError)
-│   │   ├── executor.go            # Command executor implementation
-│   │   ├── factory.go             # Command factory for creating commands
-│   │   ├── base_command.go        # Base command with common functionality
-│   │   ├── voltage_command.go     # Voltage reading command
-│   │   ├── frequency_command.go   # Frequency reading command
-│   │   ├── current_command.go     # Current reading command
-│   │   ├── energy_command.go      # Energy reading command
-│   │   ├── power_command.go       # Power reading command
-│   │   ├── power_factor_command.go       # Power factor reading command
-│   │   └── reactive_power_command.go     # Reactive power calculation command
-│   ├── mqtt/                      # USR-DR164 Gateway
-│   │   └── gateway.go
-│   └── homeassistant/             # Home Assistant Publisher
-│       └── publisher.go
-└── config.yaml                   # Application configuration
+├── src/                           # Source code directory
+│   ├── main.go                        # CLI application entry point (creates executable)
+│   ├── pkg/                           # Public packages (renamed from internal for testing)
+│   │   ├── config/                    # Configuration management
+│   │   │   └── config.go
+│   │   ├── modbus/                    # Command Pattern for Modbus operations
+│   │   │   ├── interfaces.go          # ModbusCommand interface and Gateway interface
+│   │   │   ├── types.go               # Common types (CommandResult, CommandError)
+│   │   │   ├── executor.go            # Command executor implementation
+│   │   │   ├── factory.go             # Command factory for creating commands
+│   │   │   ├── base_command.go        # Base command with common functionality
+│   │   │   ├── voltage_command.go     # Voltage reading command
+│   │   │   ├── frequency_command.go   # Frequency reading command
+│   │   │   ├── current_command.go     # Current reading command
+│   │   │   ├── energy_command.go      # Energy reading command
+│   │   │   ├── power_command.go       # Power reading command
+│   │   │   ├── power_factor_command.go       # Power factor reading command
+│   │   │   ├── reactive_power_command.go     # Reactive power calculation command
+│   │   │   └── groups/                # Grouped register reading
+│   │   │       ├── group_strategy.go  # GroupStrategy interface
+│   │   │       ├── instant_group.go   # Instant values group (voltage, current, power, frequency)
+│   │   │       ├── energy_group.go    # Energy values group
+│   │   │       └── group_executor.go  # Group execution orchestrator
+│   │   ├── gateway/                   # USR-DR164 MQTT Gateway
+│   │   │   └── gateway.go
+│   │   ├── mqtt/                      # MQTT topic management
+│   │   │   ├── publisher.go           # MQTT publisher
+│   │   │   ├── topics.go              # Topic definitions
+│   │   │   └── *_topic.go             # Individual topic handlers
+│   │   └── logger/                    # Logging utilities
+│   │       └── logger.go
+│   ├── main.go                        # Application initialization
+│   ├── go.mod                         # Go module definition
+│   └── go.sum                         # Go dependencies
+├── tests/                             # Tests (separate module from src)
+│   ├── unit/                          # Unit tests
+│   │   ├── modbus_commands_test.go    # Command parsing tests
+│   │   ├── config_test.go             # Configuration tests
+│   │   └── factory_test.go            # Factory pattern tests
+│   ├── integration/                   # Integration tests
+│   │   └── groups_integration_test.go # Group execution tests
+│   ├── go.mod                         # Test module definition
+│   └── README.md                      # Testing documentation
+├── .github/                           # GitHub Actions workflows
+│   └── workflows/
+│       └── go-tests.yml               # CI/CD pipeline
+├── config-sample.yaml                 # Sample configuration file
+├── run-tests.sh                       # Test runner (bash)
+├── run-tests.ps1                      # Test runner (PowerShell)
+└── README.md                          # This file
 ```
 
 ## SOLID Principles Implementation
@@ -83,17 +110,106 @@ A robust bridge between USR-DR164 Modbus-MQTT Gateway and Home Assistant, implem
 ```bash
 # Clone the repository
 git clone <repo-url>
-cd mqtt-modbus-bridge
+cd chint-mqtt-modbus-bridge
+
+# Navigate to source directory
+cd src
 
 # Install dependencies
 go mod tidy
 
 # Compile application
-go build -o mqtt-modbus-bridge ./cmd/main.go
+go build -o mqtt-modbus-bridge .
 
 # Copy binary to binaries location
 cp mqtt-modbus-bridge /usr/local/bin/
 ```
+
+## Testing
+
+The project includes comprehensive unit and integration tests organized in separate directories.
+
+### Test Structure
+
+Tests are organized into two categories:
+
+- **Unit Tests** (`tests/unit/`): Test individual components in isolation
+  - `modbus_commands_test.go` - Command parsing and validation tests
+  - `config_test.go` - Configuration loading and validation tests
+  - `factory_test.go` - Factory pattern and command creation tests
+
+- **Integration Tests** (`tests/integration/`): Test component interactions
+  - `groups_integration_test.go` - Group execution and reactive power calculation tests
+
+### Running Tests
+
+#### All Tests
+
+```bash
+# Using convenience scripts (recommended)
+./run-tests.sh      # Linux/macOS
+./run-tests.ps1     # Windows PowerShell
+
+# Or manually
+cd tests
+go test ./... -v
+```
+
+#### Specific Test Categories
+
+```bash
+# Unit tests only
+cd tests
+go test ./unit/... -v
+
+# Integration tests only
+cd tests
+go test ./integration/... -v
+```
+
+#### Test Coverage
+
+```bash
+# Generate coverage report
+cd tests
+go test ./... -cover -coverprofile=coverage.out
+go tool cover -html=coverage.out -o coverage.html
+
+# View coverage per package
+go test ./unit/... -cover
+go test ./integration/... -cover
+
+# Detailed coverage information
+go test ./... -coverprofile=coverage.out -covermode=atomic
+go tool cover -func=coverage.out
+```
+
+### Continuous Integration
+
+GitHub Actions automatically runs all tests on every push and pull request.
+
+The CI/CD workflow includes:
+
+- ✅ Unit tests with coverage reporting
+- ✅ Integration tests with coverage reporting
+- ✅ Code linting with golangci-lint
+- ✅ Security scanning with gosec
+- ✅ Build verification
+- ✅ Format checking
+
+View the workflow status in the **Actions** tab of the repository.
+
+### Test Coverage Summary
+
+Current test coverage:
+
+- **Unit Tests**: 22 tests covering command parsing, factory patterns, and configuration
+- **Integration Tests**: 4 tests covering group execution and reactive power calculation
+- **Total**: 26 tests, all passing ✅
+
+For more detailed testing documentation, see [tests/README.md](tests/README.md).
+
+
 
 ## Configuration
 
@@ -311,6 +427,127 @@ Each sensor type implements custom validation rules:
 - **Energy**: Monotonic increase validation, consumption rate limits
 - **Frequency**: Grid frequency validation (45-65Hz)
 
+## Grouped Register Reading (Performance Optimization)
+
+The bridge implements a **Group Strategy Pattern** for reading multiple Modbus registers in a single query, significantly improving performance and reducing communication overhead.
+
+### How It Works
+
+Instead of querying each register individually, the group strategy:
+
+1. **Calculates Address Range**: Determines the minimum and maximum register addresses in the group
+2. **Single Query**: Sends one Modbus read command for the entire range
+3. **Smart Parsing**: Uses each register's specific `ParseData()` method to parse its portion of the response
+4. **Preserves Validation**: All validation logic from individual commands is maintained
+
+### Performance Improvement
+
+**Before (Individual Queries):**
+
+- 6 separate queries for instant values (voltage, current, power_active, power_apparent, power_factor, frequency)
+- 3 separate queries for energy values (energy_total, energy_imported, energy_exported)
+- Delays between each query
+- **Total: ~9 Modbus queries**
+
+**After (Grouped Queries):**
+
+- 1 query for all instant values
+- 1 query for all energy values  
+- 1 query for calculated values (power_reactive)
+- **Total: ~3 Modbus queries**
+
+**Result: ~67% reduction in Modbus traffic!**
+
+### Register Groups
+
+#### InstantGroup
+
+Reads instant measurement values in a single query:
+
+- Voltage
+- Current
+- Active Power
+- Apparent Power
+- Power Factor
+- Frequency
+
+#### EnergyGroup
+
+Reads energy accumulation values in a single query:
+
+- Total Energy
+- Imported Energy
+- Exported Energy
+
+### Implementation Details
+
+The group executor:
+
+1. **Registry-Based**: Maintains a map of register names to their commands
+2. **Offset Calculation**: Calculates each register's offset in the raw data: `offset = (registerAddress - minAddress) * 2`
+3. **Command Reuse**: Uses existing `ParseData()` methods from individual commands
+4. **Automatic Fallback**: If group reading fails, automatically falls back to individual register reads
+
+### Example Log Output
+
+```text
+✅ Instant group created with 6 registers: [voltage current power_active power_apparent power_factor frequency]
+✅ Energy group created with 3 registers: [energy_total energy_imported energy_exported]
+📊 Using InstantGroup for optimized batch reading
+✅ 📊 Normal: Successfully read and published 6 registers in single query
+⚡ Using EnergyGroup for optimized batch reading
+✅ ⚡ Energy: Successfully read and published 3 registers in single query
+```
+
+### Architecture
+
+```text
+GroupStrategy (Interface)
+    ├── Execute(ctx, gateway, slaveID) -> rawData
+    ├── ParseResults(rawData) -> map[string]float64
+    └── GetNames() -> []string
+
+InstantGroup (Implementation)
+    ├── Registers: []config.Register
+    ├── CommandRegistry: map[string]ModbusCommand
+    └── Uses commands' ParseData() for each register
+
+EnergyGroup (Implementation)
+    ├── Registers: []config.Register
+    ├── CommandRegistry: map[string]ModbusCommand
+    └── Uses commands' ParseData() for each register
+
+GroupExecutor
+    ├── CreateInstantGroup()
+    ├── CreateEnergyGroup()
+    └── ExecuteGroup()
+```
+
+### Benefits
+
+1. **Performance**: Dramatically reduced query count and communication overhead
+2. **Code Reuse**: Leverages existing `ParseData()` methods - no code duplication
+3. **Maintainability**: Changes to parsing logic automatically apply to grouped reads
+4. **Type Safety**: Full compile-time type checking via Go interfaces
+5. **Reliability**: Automatic fallback to individual reads if group reading fails
+6. **Compatibility**: Works with existing configuration - no changes needed
+
+### Monitoring Performance
+
+To see the optimization in action, set logging level to `trace`:
+
+```yaml
+# config.yaml
+logging:
+  level: "trace"
+```
+
+Look for these log messages:
+
+- `📊 Using InstantGroup for optimized batch reading` - Grouped read initiated
+- `✅ Successfully read and published X registers in single query` - Grouped read succeeded
+- `⚠️ Group read failed, falling back to individual register reads` - Fallback triggered (rare)
+
 ## Development
 
 To add a new register type:
@@ -364,19 +601,15 @@ The new file structure provides:
 - **Clear Organization**: Interfaces, types, and implementations are clearly separated
 - **Maintainability**: Changes to one command don't affect others
 
-## Testing
+## Build and Compilation
 
 ```bash
 # Test compilation
-go build ./...
+cd src
+go build .
 
-# Run tests (when added)
-go test ./...
-
-# Check formatting
+# Run linter checks
 go fmt ./...
-
-# Check with go vet
 go vet ./...
 ```
 

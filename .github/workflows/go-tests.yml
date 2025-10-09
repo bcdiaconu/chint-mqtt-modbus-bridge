@@ -1,0 +1,132 @@
+name: Go Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+        
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Install dependencies (src)
+      working-directory: ./src
+      run: go mod download
+
+    - name: Install dependencies (tests)
+      working-directory: ./tests
+      run: go mod download
+
+    - name: Run unit tests
+      working-directory: ./tests
+      run: go test ./unit/... -v -coverprofile=unit-coverage.out
+
+    - name: Run integration tests
+      working-directory: ./tests
+      run: go test ./integration/... -v -coverprofile=integration-coverage.out
+
+    - name: Generate coverage report
+      working-directory: ./tests
+      run: |
+        go tool cover -func=unit-coverage.out > unit-coverage.txt
+        go tool cover -func=integration-coverage.out > integration-coverage.txt
+        cat unit-coverage.txt
+        cat integration-coverage.txt
+
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-reports
+        path: |
+          tests/unit-coverage.out
+          tests/integration-coverage.out
+          tests/unit-coverage.txt
+          tests/integration-coverage.txt
+
+    - name: Build application
+      working-directory: ./src
+      run: go build -v -o mqtt-modbus-bridge .
+
+    - name: Verify build
+      working-directory: ./src
+      run: |
+        if [ -f mqtt-modbus-bridge ]; then
+          echo "Build successful"
+          ls -lh mqtt-modbus-bridge
+        else
+          echo "Build failed - binary not found"
+          exit 1
+        fi
+
+    - name: Run go vet
+      working-directory: ./src
+      run: go vet ./...
+
+    - name: Run go fmt check
+      working-directory: ./src
+      run: |
+        FMT_OUTPUT=$(gofmt -l .)
+        if [ -n "$FMT_OUTPUT" ]; then
+          echo "The following files need formatting:"
+          echo "$FMT_OUTPUT"
+          exit 1
+        fi
+
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v4
+      with:
+        version: latest
+        working-directory: ./src
+        args: --timeout=5m
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Run Gosec Security Scanner
+      uses: securego/gosec@master
+      with:
+        args: './src/...'
