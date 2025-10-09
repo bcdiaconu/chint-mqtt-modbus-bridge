@@ -19,16 +19,6 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.21'
-        
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
 
     - name: Install dependencies (src)
       working-directory: ./src
@@ -106,12 +96,19 @@ jobs:
       with:
         go-version: '1.21'
 
+    - name: Install dependencies
+      working-directory: ./src
+      run: go mod download
+
     - name: Run golangci-lint
       uses: golangci/golangci-lint-action@v4
       with:
         version: latest
         working-directory: ./src
         args: --timeout=5m
+        skip-cache: true
+        skip-pkg-cache: true
+        skip-build-cache: true
 
   security:
     name: Security Scan
@@ -126,7 +123,13 @@ jobs:
       with:
         go-version: '1.21'
 
+    - name: Install dependencies
+      working-directory: ./src
+      run: go mod download
+
+    - name: Install Gosec
+      run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
     - name: Run Gosec Security Scanner
-      uses: securego/gosec@master
-      with:
-        args: './src/...'
+      working-directory: ./src
+      run: gosec ./...
