@@ -12,6 +12,7 @@ import (
 	"mqtt-modbus-bridge/pkg/mqtt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -161,19 +162,23 @@ func (app *Application) initializeGroups() error {
 	// Define instant register names (non-energy registers)
 	instantRegisterNames := []string{}
 	for name := range app.commands {
-		if !app.isEnergyRegister(name) && name != "power_reactive" {
+		// Exclude power_reactive (virtual) and energy registers
+		if !app.isEnergyRegister(name) && !strings.HasSuffix(name, "_power_reactive") && name != "power_reactive" {
 			instantRegisterNames = append(instantRegisterNames, name)
 		}
 	}
 
-	// Define energy register names
-	energyRegisterNames := []string{"energy_total", "energy_imported", "energy_exported"}
+	// Define energy register suffixes
+	energyRegisterSuffixes := []string{"energy_total", "energy_imported", "energy_exported"}
 
-	// Filter energy registers to only those that exist in config
+	// Find all energy registers from commands (handles device prefixes)
 	existingEnergyRegisters := []string{}
-	for _, name := range energyRegisterNames {
-		if _, exists := app.commands[name]; exists {
-			existingEnergyRegisters = append(existingEnergyRegisters, name)
+	for name := range app.commands {
+		for _, suffix := range energyRegisterSuffixes {
+			if name == suffix || strings.HasSuffix(name, "_"+suffix) {
+				existingEnergyRegisters = append(existingEnergyRegisters, name)
+				break
+			}
 		}
 	}
 
@@ -308,9 +313,11 @@ func (app *Application) mainLoopEnergyRegisters(ctx context.Context) {
 
 // isEnergyRegister checks if a register is an energy register (kWh meter)
 func (app *Application) isEnergyRegister(name string) bool {
+	// Energy register suffixes (works with or without device prefix)
 	energyRegisters := []string{"energy_total", "energy_imported", "energy_exported"}
 	for _, energyReg := range energyRegisters {
-		if name == energyReg {
+		// Check if name ends with the energy register suffix (handles device_energy_total)
+		if name == energyReg || strings.HasSuffix(name, "_"+energyReg) {
 			return true
 		}
 	}

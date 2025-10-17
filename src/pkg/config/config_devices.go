@@ -285,7 +285,83 @@ func ConvertDevicesToGroups(devices map[string]Device) map[string]RegisterGroup 
 }
 
 // GetAllRegisters extracts all registers from all devices for backward compatibility
+// Creates unique keys by combining device key with register key (deviceKey_registerKey)
 func GetAllRegistersFromDevices(devices map[string]Device) map[string]Register {
-	allGroups := ConvertDevicesToGroups(devices)
-	return ConvertGroupsToRegisters(allGroups)
+	registers := make(map[string]Register)
+
+	for deviceKey, device := range devices {
+		if !device.Metadata.Enabled {
+			logger.LogDebug("Skipping disabled device: %s", device.Metadata.Name)
+			continue
+		}
+
+		// Get the HA device ID for this device
+		haDeviceID := device.GetHADeviceID(deviceKey)
+
+		// Convert each register group
+		for _, group := range device.Modbus.RegisterGroups {
+			// Ensure group has device's slave_id from RTU config
+			if group.SlaveID == 0 {
+				group.SlaveID = device.RTU.SlaveID
+			}
+
+			for _, reg := range group.Registers {
+				// Calculate actual address from group start + offset
+				offsetInRegisters := reg.Offset / 2
+
+				// Validate that the address calculation won't overflow uint16
+				if offsetInRegisters < 0 || offsetInRegisters > 0xFFFF {
+					continue
+				}
+
+				// Calculate final address and check for overflow
+				finalAddress := int(group.StartAddress) + offsetInRegisters
+				if finalAddress > 0xFFFF {
+					continue
+				}
+
+				// Safe conversion after validation
+				// #nosec G115 -- Validated above that offsetInRegisters fits in uint16
+				address := group.StartAddress + uint16(offsetInRegisters)
+
+				// Construct HATopic if not provided
+				haTopic := reg.HATopic
+				if haTopic == "" {
+					haTopic = ConstructHATopic(haDeviceID, reg.Key, reg.DeviceClass)
+				}
+
+				// Create pointers for optional fields (only if non-zero)
+				var minPtr, maxPtr, maxKwhPtr *float64
+				if reg.Min != 0 {
+					minPtr = &reg.Min
+				}
+				if reg.Max != 0 {
+					maxPtr = &reg.Max
+				}
+				if reg.MaxKwhPerHour != 0 {
+					maxKwhPtr = &reg.MaxKwhPerHour
+				}
+
+				// Create unique key: deviceKey_registerKey
+				uniqueKey := fmt.Sprintf("%s_%s", deviceKey, reg.Key)
+
+				registers[uniqueKey] = Register{
+					Name:          reg.Name,
+					Address:       address,
+					Unit:          reg.Unit,
+					DeviceClass:   reg.DeviceClass,
+					StateClass:    reg.StateClass,
+					HATopic:       haTopic,
+					Min:           minPtr,
+					Max:           maxPtr,
+					MaxKwhPerHour: maxKwhPtr,
+				}
+
+				logger.LogDebug("Converted device '%s' register '%s' -> '%s' (address: 0x%04X, topic: %s)",
+					deviceKey, reg.Key, uniqueKey, address, haTopic)
+			}
+		}
+	}
+
+	return registers
 }

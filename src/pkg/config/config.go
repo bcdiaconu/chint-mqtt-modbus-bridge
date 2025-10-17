@@ -250,9 +250,17 @@ func (c *Config) Validate() error {
 
 		// Convert groups to registers for backward compatibility with existing code
 		if len(c.Registers) == 0 {
-			c.Registers = ConvertGroupsToRegisters(c.RegisterGroups)
-			logger.LogInfo("✅ Converted %d register groups to %d individual registers",
-				len(c.RegisterGroups), len(c.Registers))
+			// For V2.1 with devices, use device-aware conversion that creates unique keys
+			if len(c.Devices) > 0 {
+				c.Registers = GetAllRegistersFromDevices(c.Devices)
+				logger.LogInfo("✅ Converted %d devices to %d individual registers with unique keys",
+					len(c.Devices), len(c.Registers))
+			} else {
+				// Fallback for V2.1 with register_groups
+				c.Registers = ConvertGroupsToRegisters(c.RegisterGroups)
+				logger.LogInfo("✅ Converted %d register groups to %d individual registers",
+					len(c.RegisterGroups), len(c.Registers))
+			}
 		}
 	} else if c.Version == "2.0" {
 		// V2.0 format validation (flat groups)
