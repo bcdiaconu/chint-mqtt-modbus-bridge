@@ -1,0 +1,118 @@
+# Test configuration demonstrating device_id fallback
+# Version 2.1 - Device keys and optional homeassistant.device_id
+
+version: "2.1"
+
+mqtt:
+  broker: "localhost"
+  port: 1883
+  username: "mqtt"
+  password: "mqtt_pass"
+  client_id: "modbus-bridge"
+  gateway:
+    mac: "D4AD20B75646"
+    cmd_topic: "D4AD20B75646/cmd"
+    data_topic: "D4AD20B75646/data"
+
+homeassistant:
+  discovery_prefix: "homeassistant"
+  status_topic: "modbus-bridge/status"
+  diagnostic_topic: "modbus-bridge/diagnostic"
+
+modbus:
+  poll_interval: 1000
+  register_delay: 50
+  energy_delay: 5000
+  timeout: 5000
+  republish_interval: 24
+
+devices:
+  # Device with explicit device_id
+  energy_meter_1:
+    metadata:
+      name: "Energy Meter 1"
+      manufacturer: "Chint"
+      model: "DTSU666-H"
+      enabled: true
+    rtu:
+      slave_id: 11
+    homeassistant:
+      device_id: "chint_meter_custom_001"  # Explicit ID
+      manufacturer: "Chint Electric Co."
+      model: "DTSU666-H Three-Phase Meter"
+    modbus:
+      register_groups:
+        instant:
+          name: "Instant Readings"
+          function_code: 0x03
+          start_address: 0x2000
+          register_count: 10
+          enabled: true
+          registers:
+            - key: "voltage"
+              name: "Voltage"
+              offset: 0
+              unit: "V"
+              device_class: "voltage"
+              state_class: "measurement"
+              ha_topic: "meter1/voltage"
+  
+  # Device using device key as device_id (no homeassistant section)
+  energy_meter_2:
+    metadata:
+      name: "Energy Meter 2"
+      manufacturer: "Chint"
+      model: "DTSU666-H"
+      enabled: true
+    rtu:
+      slave_id: 12
+    # No homeassistant section - will use "energy_meter_2" as device_id
+    modbus:
+      register_groups:
+        instant:
+          name: "Instant Readings"
+          function_code: 0x03
+          start_address: 0x2000
+          register_count: 10
+          enabled: true
+          registers:
+            - key: "voltage"
+              name: "Voltage"
+              offset: 0
+              unit: "V"
+              device_class: "voltage"
+              state_class: "measurement"
+              ha_topic: "meter2/voltage"
+  
+  # Device with partial homeassistant config (manufacturer override only)
+  solar_inverter:
+    metadata:
+      name: "Solar Inverter"
+      manufacturer: "Growatt"
+      model: "MIN 3000TL-X"
+      enabled: true
+    rtu:
+      slave_id: 20
+    homeassistant:
+      # No device_id specified - will use "solar_inverter"
+      manufacturer: "Growatt New Energy Technology"  # Override
+      # model inherited from metadata
+    modbus:
+      register_groups:
+        status:
+          name: "Inverter Status"
+          function_code: 0x04
+          start_address: 0x0000
+          register_count: 10
+          enabled: true
+          registers:
+            - key: "pv_power"
+              name: "PV Power"
+              offset: 0
+              unit: "W"
+              device_class: "power"
+              state_class: "measurement"
+              ha_topic: "inverter/pv_power"
+
+logging:
+  level: "info"

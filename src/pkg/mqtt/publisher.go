@@ -127,11 +127,12 @@ func (p *Publisher) Disconnect() {
 }
 
 // PublishSensorDiscovery publishes discovery configuration for a sensor using topic pattern
-func (p *Publisher) PublishSensorDiscovery(ctx context.Context, result *modbus.CommandResult) error {
+// deviceInfo contains the Home Assistant device information (nil for backward compatibility with global device)
+func (p *Publisher) PublishSensorDiscovery(ctx context.Context, result *modbus.CommandResult, deviceInfo *DeviceInfo) error {
 	// Determine topic type based on device class
 	topicType := p.getTopicTypeFromDeviceClass(result.DeviceClass)
 	handler := p.context.GetHandler(topicType)
-	return handler.PublishDiscovery(ctx, p.client, result)
+	return handler.PublishDiscovery(ctx, p.client, result, deviceInfo)
 }
 
 // PublishSensorState publishes the state of a sensor using topic pattern
@@ -163,9 +164,10 @@ func (p *Publisher) getTopicTypeFromDeviceClass(deviceClass string) string {
 }
 
 // PublishAllDiscoveries publishes discovery configurations for all sensors
-func (p *Publisher) PublishAllDiscoveries(ctx context.Context, results []*modbus.CommandResult) error {
+// deviceInfo contains the Home Assistant device information (nil for backward compatibility)
+func (p *Publisher) PublishAllDiscoveries(ctx context.Context, results []*modbus.CommandResult, deviceInfo *DeviceInfo) error {
 	for _, result := range results {
-		if err := p.PublishSensorDiscovery(ctx, result); err != nil {
+		if err := p.PublishSensorDiscovery(ctx, result, deviceInfo); err != nil {
 			logger.LogError("❌ Error publishing discovery for %s: %v", result.Name, err)
 			continue
 		}
@@ -205,13 +207,15 @@ func (p *Publisher) PublishStatusOffline(ctx context.Context) error {
 }
 
 // PublishDiagnosticDiscovery publishes discovery configuration for diagnostic sensor using topic pattern
+// This is for the bridge-level diagnostic sensor (not per-device)
 func (p *Publisher) PublishDiagnosticDiscovery(ctx context.Context) error {
 	handler := p.context.GetHandler("diagnostic")
 	// Create a dummy result for discovery
 	dummyResult := &modbus.CommandResult{
 		Name: "Diagnostic",
 	}
-	return handler.PublishDiscovery(ctx, p.client, dummyResult)
+	// Diagnostic is bridge-level, use nil deviceInfo (falls back to global config)
+	return handler.PublishDiscovery(ctx, p.client, dummyResult, nil)
 }
 
 // SensorConfig configuration for a Home Assistant sensor

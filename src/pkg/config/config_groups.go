@@ -25,7 +25,7 @@ type GroupRegister struct {
 	Unit          string  `yaml:"unit"`
 	DeviceClass   string  `yaml:"device_class"`
 	StateClass    string  `yaml:"state_class"`
-	HATopic       string  `yaml:"ha_topic"`
+	HATopic       string  `yaml:"ha_topic,omitempty"` // Optional: Auto-constructed if not provided in v2.1
 	Min           float64 `yaml:"min,omitempty"`
 	Max           float64 `yaml:"max,omitempty"`
 	MaxKwhPerHour float64 `yaml:"max_kwh_per_hour,omitempty"`
@@ -115,7 +115,25 @@ func ConvertGroupsToRegisters(groups map[string]RegisterGroup) map[string]Regist
 	for _, group := range groups {
 		for _, reg := range group.Registers {
 			// Calculate actual address from group start + offset
-			address := group.StartAddress + uint16(reg.Offset/2)
+			// Safe conversion: offset is in bytes, divide by 2 to get register offset
+			offsetInRegisters := reg.Offset / 2
+
+			// Validate that the address calculation won't overflow uint16
+			if offsetInRegisters < 0 || offsetInRegisters > 0xFFFF {
+				// Skip invalid register (offset out of range)
+				continue
+			}
+
+			// Calculate final address and check for overflow
+			finalAddress := int(group.StartAddress) + offsetInRegisters
+			if finalAddress > 0xFFFF {
+				// Skip invalid register (address overflow)
+				continue
+			}
+
+			// Safe conversion after validation
+			// #nosec G115 -- Validated above that offsetInRegisters fits in uint16
+			address := group.StartAddress + uint16(offsetInRegisters)
 
 			// Create pointers for optional fields (only if non-zero)
 			var minPtr, maxPtr, maxKwhPtr *float64

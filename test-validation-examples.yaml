@@ -1,0 +1,192 @@
+# Test Configuration - Invalid Examples for Validation
+# This file demonstrates various validation errors
+
+version: "2.1"
+
+mqtt:
+  broker: "localhost"
+  port: 1883
+  username: "mqtt"
+  password: "mqtt_pass"
+  client_id: "modbus-bridge"
+  gateway:
+    mac: "D4AD20B75646"
+    cmd_topic: "D4AD20B75646/cmd"
+    data_topic: "D4AD20B75646/data"
+
+homeassistant:
+  discovery_prefix: "homeassistant"
+  status_topic: "modbus-bridge/status"
+  diagnostic_topic: "modbus-bridge/diagnostic"
+
+modbus:
+  poll_interval: 1000
+  register_delay: 50
+  energy_delay: 5000
+  timeout: 5000
+  republish_interval: 24
+
+# EXAMPLE 1: Duplicate slave_id
+# Uncomment to test duplicate slave_id validation error
+# devices:
+#   meter_1:
+#     metadata:
+#       name: "Meter 1"
+#       enabled: true
+#     rtu:
+#       slave_id: 11      # ❌ Same slave_id!
+#     modbus:
+#       register_groups:
+#         test:
+#           name: "Test"
+#           function_code: 0x03
+#           start_address: 0x2000
+#           register_count: 10
+#           enabled: true
+#           registers:
+#             - key: "test"
+#               name: "Test"
+#               offset: 0
+#               unit: "V"
+#   
+#   meter_2:
+#     metadata:
+#       name: "Meter 2"
+#       enabled: true
+#     rtu:
+#       slave_id: 11      # ❌ ERROR: duplicate rtu.slave_id 11
+
+# EXAMPLE 2: Duplicate HA device_id (explicit)
+# Uncomment to test duplicate device_id validation error
+# devices:
+#   meter_1:
+#     metadata:
+#       name: "Meter 1"
+#       enabled: true
+#     rtu:
+#       slave_id: 11
+#     homeassistant:
+#       device_id: "same_device_id"    # ❌ Same device_id!
+#     modbus:
+#       register_groups:
+#         test:
+#           # ...
+#   
+#   meter_2:
+#     metadata:
+#       name: "Meter 2"
+#       enabled: true
+#     rtu:
+#       slave_id: 12
+#     homeassistant:
+#       device_id: "same_device_id"    # ❌ ERROR: duplicate device_id
+
+# EXAMPLE 3: Device key conflicts with explicit device_id
+# Uncomment to test device key / device_id conflict
+# devices:
+#   meter_1:
+#     metadata:
+#       name: "Meter 1"
+#       enabled: true
+#     rtu:
+#       slave_id: 11
+#     # No homeassistant config - device_id defaults to "meter_1"
+#     modbus:
+#       register_groups:
+#         test:
+#           # ...
+#   
+#   meter_2:
+#     metadata:
+#       name: "Meter 2"
+#       enabled: true
+#     rtu:
+#       slave_id: 12
+#     homeassistant:
+#       device_id: "meter_1"    # ❌ ERROR: Conflicts with meter_1's device key!
+
+# EXAMPLE 4: Valid configuration with unique keys
+devices:
+  energy_meter_1:
+    metadata:
+      name: "Energy Meter 1"
+      manufacturer: "Chint"
+      model: "DTSU666-H"
+      enabled: true
+    rtu:
+      slave_id: 11
+    homeassistant:
+      device_id: "chint_meter_001"    # ✅ Explicit, unique
+    modbus:
+      register_groups:
+        instant:
+          name: "Instant Readings"
+          function_code: 0x03
+          start_address: 0x2000
+          register_count: 10
+          enabled: true
+          registers:
+            - key: "voltage"
+              name: "Voltage"
+              offset: 0
+              unit: "V"
+              device_class: "voltage"
+              state_class: "measurement"
+              ha_topic: "meter1/voltage"
+  
+  energy_meter_2:
+    metadata:
+      name: "Energy Meter 2"
+      manufacturer: "Chint"
+      model: "DTSU666-H"
+      enabled: true
+    rtu:
+      slave_id: 12                     # ✅ Different slave_id
+    # No homeassistant - device_id defaults to "energy_meter_2" ✅
+    modbus:
+      register_groups:
+        instant:
+          name: "Instant Readings"
+          function_code: 0x03
+          start_address: 0x2000
+          register_count: 10
+          enabled: true
+          registers:
+            - key: "voltage"
+              name: "Voltage"
+              offset: 0
+              unit: "V"
+              device_class: "voltage"
+              state_class: "measurement"
+              ha_topic: "meter2/voltage"
+  
+  solar_inverter:
+    metadata:
+      name: "Solar Inverter"
+      manufacturer: "Growatt"
+      model: "MIN 3000TL-X"
+      enabled: true
+    rtu:
+      slave_id: 20                     # ✅ Different slave_id
+    homeassistant:
+      device_id: "growatt_001"        # ✅ Explicit, unique
+      manufacturer: "Growatt New Energy"
+    modbus:
+      register_groups:
+        status:
+          name: "Inverter Status"
+          function_code: 0x04
+          start_address: 0x0000
+          register_count: 10
+          enabled: true
+          registers:
+            - key: "pv_power"
+              name: "PV Power"
+              offset: 0
+              unit: "W"
+              device_class: "power"
+              state_class: "measurement"
+              ha_topic: "inverter/pv_power"
+
+logging:
+  level: "info"

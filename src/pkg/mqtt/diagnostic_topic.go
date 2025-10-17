@@ -26,29 +26,37 @@ func NewDiagnosticTopic(config *config.HAConfig) *DiagnosticTopic {
 }
 
 // PublishDiscovery publishes diagnostic discovery configuration
-func (d *DiagnosticTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, result *modbus.CommandResult) error {
+func (d *DiagnosticTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, result *modbus.CommandResult, deviceInfo *DeviceInfo) error {
 	if !client.IsConnected() {
 		return fmt.Errorf("client is not connected")
 	}
 
-	// Topic for diagnostic sensor discovery
-	discoveryTopic := fmt.Sprintf("%s/sensor/%s_diagnostic/config",
-		d.config.DiscoveryPrefix, d.config.DeviceID)
-
-	// Configuration for the diagnostic sensor
-	config := SensorConfig{
-		Name:              "Diagnostic",
-		UniqueID:          fmt.Sprintf("%s_diagnostic", d.config.DeviceID),
-		StateTopic:        d.config.DiagnosticTopic,
-		UnitOfMeasurement: "",
-		DeviceClass:       "enum",
-		StateClass:        "",
-		Device: DeviceInfo{
+	// Use device info if provided, otherwise fall back to deprecated global config
+	var device DeviceInfo
+	if deviceInfo != nil {
+		device = *deviceInfo
+	} else {
+		device = DeviceInfo{
 			Name:         d.config.DeviceName,
 			Identifiers:  []string{d.config.DeviceID},
 			Manufacturer: d.config.Manufacturer,
 			Model:        d.config.Model,
-		},
+		}
+	}
+
+	// Topic for diagnostic sensor discovery
+	discoveryTopic := fmt.Sprintf("%s/sensor/%s_diagnostic/config",
+		d.config.DiscoveryPrefix, device.Identifiers[0])
+
+	// Configuration for the diagnostic sensor
+	config := SensorConfig{
+		Name:                   "Diagnostic",
+		UniqueID:               fmt.Sprintf("%s_diagnostic", device.Identifiers[0]),
+		StateTopic:             d.config.DiagnosticTopic,
+		UnitOfMeasurement:      "",
+		DeviceClass:            "enum",
+		StateClass:             "",
+		Device:                 device,
 		ValueTemplate:          "{{ value_json.message }}",
 		AvailabilityTopic:      d.config.StatusTopic,
 		PayloadAvailable:       "online",

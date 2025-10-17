@@ -16,6 +16,7 @@ modbus:
 ```
 
 Common Modbus functions:
+
 - **0x03** - Read Holding Registers (configuration, setpoints)
 - **0x04** - Read Input Registers (sensor data, read-only)
 - **0x06** - Write Single Register
@@ -59,7 +60,7 @@ register_groups:
 
 Each group generates its own command with the appropriate function code:
 
-```
+```md
 Config Group:  0B 03 0000 0002 XXXX  (Function 0x03)
                   ↑
                   └─ Read Holding Registers
@@ -75,7 +76,7 @@ Energy Group:  0B 03 4000 0016 XXXX  (Function 0x03)
 
 ## Architecture Decision
 
-### Function Code Belongs To:
+### Function Code Belongs To
 
 1. ✅ **Register Group** - Each group is a Modbus command
 2. ✅ **Individual Register** (if not grouped) - Each standalone read is a command
@@ -84,7 +85,8 @@ Energy Group:  0B 03 4000 0016 XXXX  (Function 0x03)
 ### Why This is Correct
 
 A Modbus command is defined by:
-```
+
+```md
 Command = SlaveID + FunctionCode + StartAddress + Count + CRC
 ```
 
@@ -100,6 +102,7 @@ modbus:
 ```
 
 The global `slave_id` makes sense because:
+
 - Most devices have one slave ID
 - Can be overridden per group if needed
 - Reduces configuration duplication
@@ -116,6 +119,7 @@ register_groups:
 ```
 
 The per-group `function_code` is correct because:
+
 - Each group is a distinct Modbus command
 - Different groups may use different functions
 - Makes the command structure explicit
@@ -205,6 +209,7 @@ register_groups:
 ## Conclusion
 
 **Function code MUST be at the group level** because:
+
 1. Each group represents one Modbus command
 2. Commands require a function code
 3. Different groups may need different functions

@@ -25,7 +25,8 @@ func NewSensorTopic(config *config.HAConfig) *SensorTopic {
 }
 
 // PublishDiscovery publishes sensor discovery configuration
-func (s *SensorTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, result *modbus.CommandResult) error {
+// deviceInfo contains the Home Assistant device information for this sensor's parent device
+func (s *SensorTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, result *modbus.CommandResult, deviceInfo *DeviceInfo) error {
 	if !client.IsConnected() {
 		return fmt.Errorf("client is not connected")
 	}
@@ -33,24 +34,33 @@ func (s *SensorTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, 
 	// Extract sensor name from topic
 	sensorName := extractSensorName(result.Topic)
 
-	// Topic for discovery
-	discoveryTopic := fmt.Sprintf("%s/sensor/%s_%s/config",
-		s.config.DiscoveryPrefix, s.config.DeviceID, sensorName)
-
-	// Configuration for the sensor
-	config := SensorConfig{
-		Name:              result.Name,
-		UniqueID:          fmt.Sprintf("%s_%s", s.config.DeviceID, sensorName),
-		StateTopic:        result.Topic + "/state",
-		UnitOfMeasurement: result.Unit,
-		DeviceClass:       result.DeviceClass,
-		StateClass:        result.StateClass,
-		Device: DeviceInfo{
+	// Use device info if provided, otherwise fall back to deprecated global config
+	var device DeviceInfo
+	if deviceInfo != nil {
+		device = *deviceInfo
+	} else {
+		// Backward compatibility: use deprecated global device config
+		device = DeviceInfo{
 			Name:         s.config.DeviceName,
 			Identifiers:  []string{s.config.DeviceID},
 			Manufacturer: s.config.Manufacturer,
 			Model:        s.config.Model,
-		},
+		}
+	}
+
+	// Topic for discovery
+	discoveryTopic := fmt.Sprintf("%s/sensor/%s_%s/config",
+		s.config.DiscoveryPrefix, device.Identifiers[0], sensorName)
+
+	// Configuration for the sensor
+	config := SensorConfig{
+		Name:                result.Name,
+		UniqueID:            fmt.Sprintf("%s_%s", device.Identifiers[0], sensorName),
+		StateTopic:          result.Topic + "/state",
+		UnitOfMeasurement:   result.Unit,
+		DeviceClass:         result.DeviceClass,
+		StateClass:          result.StateClass,
+		Device:              device,
 		ValueTemplate:       "{{ value_json.value }}",
 		AvailabilityTopic:   s.config.StatusTopic,
 		PayloadAvailable:    "online",

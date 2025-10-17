@@ -42,14 +42,19 @@ type GatewayConfig struct {
 }
 
 // HAConfig contains Home Assistant MQTT Discovery settings
+// Global settings for the bridge (discovery prefix and bridge-level topics)
+// Per-device Home Assistant information is configured in Device struct
 type HAConfig struct {
-	DiscoveryPrefix string `yaml:"discovery_prefix"`
-	DeviceName      string `yaml:"device_name"`
-	DeviceID        string `yaml:"device_id"`
-	Manufacturer    string `yaml:"manufacturer"`
-	Model           string `yaml:"model"`
-	StatusTopic     string `yaml:"status_topic"`
-	DiagnosticTopic string `yaml:"diagnostic_topic"`
+	DiscoveryPrefix string `yaml:"discovery_prefix"` // HA MQTT discovery prefix (e.g., "homeassistant")
+	StatusTopic     string `yaml:"status_topic"`     // Bridge availability topic
+	DiagnosticTopic string `yaml:"diagnostic_topic"` // Bridge diagnostics topic
+
+	// DEPRECATED: These fields are now per-device in Device struct
+	// Kept for backward compatibility with V2.0 configs
+	DeviceName   string `yaml:"device_name,omitempty"`
+	DeviceID     string `yaml:"device_id,omitempty"`
+	Manufacturer string `yaml:"manufacturer,omitempty"`
+	Model        string `yaml:"model,omitempty"`
 }
 
 // ModbusConfig contains Modbus device settings
@@ -148,6 +153,40 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 
 	logger.LogInfo("✅ Configuration loaded successfully from %s (version: %s)", usedPath, config.Version)
+	return &config, nil
+}
+
+// LoadConfigFromString loads configuration from a YAML string (for testing)
+func LoadConfigFromString(yamlContent string) (*Config, error) {
+	data := []byte(yamlContent)
+
+	// First, parse just the version to validate compatibility
+	var versionCheck VersionInfo
+	if err := yaml.Unmarshal(data, &versionCheck); err != nil {
+		return nil, fmt.Errorf("error parsing configuration version: %w", err)
+	}
+
+	// If no version specified, assume V1 (backward compatibility)
+	if versionCheck.Version == "" {
+		versionCheck.Version = "1.0"
+	}
+
+	// Parse the full configuration
+	var config Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("error parsing configuration: %w", err)
+	}
+
+	// Set version if not present (backward compatibility)
+	if config.Version == "" {
+		config.Version = "1.0"
+	}
+
+	// Configuration validation
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
 	return &config, nil
 }
 

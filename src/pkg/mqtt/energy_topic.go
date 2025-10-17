@@ -31,7 +31,7 @@ func NewEnergyTopic(config *config.HAConfig) *EnergyTopic {
 }
 
 // PublishDiscovery publishes energy sensor discovery configuration
-func (e *EnergyTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, result *modbus.CommandResult) error {
+func (e *EnergyTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, result *modbus.CommandResult, deviceInfo *DeviceInfo) error {
 	if !client.IsConnected() {
 		return fmt.Errorf("client is not connected")
 	}
@@ -39,24 +39,32 @@ func (e *EnergyTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, 
 	// Extract sensor name from topic
 	sensorName := extractSensorName(result.Topic)
 
-	// Topic for discovery
-	discoveryTopic := fmt.Sprintf("%s/sensor/%s_%s/config",
-		e.config.DiscoveryPrefix, e.config.DeviceID, sensorName)
-
-	// Configuration for the energy sensor
-	config := SensorConfig{
-		Name:              result.Name,
-		UniqueID:          fmt.Sprintf("%s_%s", e.config.DeviceID, sensorName),
-		StateTopic:        result.Topic + "/state",
-		UnitOfMeasurement: result.Unit,
-		DeviceClass:       result.DeviceClass,
-		StateClass:        result.StateClass,
-		Device: DeviceInfo{
+	// Use device info if provided, otherwise fall back to deprecated global config
+	var device DeviceInfo
+	if deviceInfo != nil {
+		device = *deviceInfo
+	} else {
+		device = DeviceInfo{
 			Name:         e.config.DeviceName,
 			Identifiers:  []string{e.config.DeviceID},
 			Manufacturer: e.config.Manufacturer,
 			Model:        e.config.Model,
-		},
+		}
+	}
+
+	// Topic for discovery
+	discoveryTopic := fmt.Sprintf("%s/sensor/%s_%s/config",
+		e.config.DiscoveryPrefix, device.Identifiers[0], sensorName)
+
+	// Configuration for the energy sensor
+	config := SensorConfig{
+		Name:                result.Name,
+		UniqueID:            fmt.Sprintf("%s_%s", device.Identifiers[0], sensorName),
+		StateTopic:          result.Topic + "/state",
+		UnitOfMeasurement:   result.Unit,
+		DeviceClass:         result.DeviceClass,
+		StateClass:          result.StateClass,
+		Device:              device,
 		ValueTemplate:       "{{ value_json.value | round(3) }}",
 		AvailabilityTopic:   e.config.StatusTopic,
 		PayloadAvailable:    "online",

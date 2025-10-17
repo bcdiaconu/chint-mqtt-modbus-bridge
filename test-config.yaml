@@ -1,0 +1,62 @@
+# Test Configuration V2.1 - Segregated Structure
+version: "2.1"
+
+mqtt:
+  broker: "localhost"
+  port: 1883
+  username: "test"
+  password: "test"
+  client_id: "test-bridge"
+  gateway:
+    mac: "TEST123456"
+    cmd_topic: "test/cmd"
+    data_topic: "test/data"
+
+homeassistant:
+  discovery_prefix: "homeassistant"
+  status_topic: "test-bridge/status"
+  diagnostic_topic: "test-bridge/diagnostic"
+
+modbus:
+  poll_interval: 1000
+  register_delay: 50
+  energy_delay: 5000
+  timeout: 5000
+  republish_interval: 24
+
+devices:
+  test_meter:
+    metadata:
+      name: "Test Meter"
+      manufacturer: "Test Manufacturer"
+      model: "TEST-001"
+      enabled: true
+    
+    rtu:
+      slave_id: 11
+      poll_interval: 2000
+    
+    homeassistant:
+      device_id: "test_meter_001"
+      manufacturer: "Test Manufacturer Inc."
+      model: "TEST-001 Advanced"
+    
+    modbus:
+      register_groups:
+        instant:
+          name: "Instant Values"
+          function_code: 0x03
+          start_address: 0x2000
+          register_count: 10
+          enabled: true
+          registers:
+            - key: "voltage"
+              name: "Voltage"
+              offset: 0
+              unit: "V"
+              device_class: "voltage"
+              state_class: "measurement"
+              ha_topic: "test/voltage"
+
+logging:
+  level: "debug"

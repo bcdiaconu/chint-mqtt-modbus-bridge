@@ -13,6 +13,7 @@ A robust bridge between USR-DR164 Modbus-MQTT Gateway and Home Assistant, implem
 
 ## Features
 
+### Core Features
 - **SOLID Architecture**: Follows all SOLID principles for easy maintenance
 - **Strategy Pattern**: Each Modbus register type has its own parsing strategy
 - **Home Assistant Integration**: Auto-discovery and automatic sensor publishing
@@ -20,6 +21,15 @@ A robust bridge between USR-DR164 Modbus-MQTT Gateway and Home Assistant, implem
 - **External Configuration**: Complete configuration through YAML file
 - **Comprehensive Logging**: Detailed monitoring of all operations
 - **Graceful Shutdown**: Safe shutdown with complete cleanup
+
+### Multi-Device Support (V2.1+)
+- **Device-Based Configuration**: Organize multiple Modbus devices with segregated metadata, RTU, Modbus, and Home Assistant sections
+- **Unique Device Validation**: Automatic validation of device keys, slave IDs, and Home Assistant device IDs
+- **Flexible Device IDs**: Optional `homeassistant.device_id` with automatic fallback to device key
+- **Per-Device Settings**: Individual poll intervals, manufacturer/model overrides, and register groups per device
+- **Scalable Architecture**: Support for multiple energy meters, inverters, or other Modbus devices on the same RTU bus
+
+See [Configuration Documentation](docs/CONFIG.md) for details.
 
 ## Project Structure
 
@@ -209,7 +219,20 @@ Current test coverage:
 
 For more detailed testing documentation, see [tests/README.md](tests/README.md).
 
+## Documentation
 
+Comprehensive documentation is available in the `docs/` directory:
+
+### Getting Started
+- **[Configuration Reference](docs/CONFIG.md)** - Complete configuration format documentation (V2.0 and V2.1)
+- **[Multi-Device Support](docs/MULTI_DEVICE.md)** - Setting up multiple Modbus devices (V2.1+)
+- **[Migration Guide](docs/MIGRATION.md)** - Upgrading from V1, V2.0, or single-device to multi-device
+
+### Technical Reference
+- **[Validation Rules](docs/VALIDATION.md)** - Configuration validation rules and examples
+- **[CRC Implementation](docs/CRC.md)** - Modbus CRC calculation details
+- **[Function Codes](docs/FUNCTION_CODE.md)** - Supported Modbus function codes
+- **[Reactive Power Calculation](docs/REACTIVE_POWER_CALCULATION.md)** - Power calculations
 
 ## Configuration
 

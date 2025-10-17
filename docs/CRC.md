@@ -14,6 +14,7 @@ This package provides automatic CRC-16 (Modbus) calculation and verification for
 ## CRC-16 Algorithm
 
 The implementation uses the standard Modbus CRC-16 algorithm:
+
 - **Polynomial**: 0xA001 (reflected/reversed form of 0x8005)
 - **Initial Value**: 0xFFFF
 - **Byte Order**: Little-endian (low byte first, high byte second)
@@ -127,6 +128,7 @@ command := modbus.BuildModbusCommand(0x0B, 0x03, 0x2000, 0x0022)
 ```
 
 **Breakdown**:
+
 - `0B` - Slave ID (device 11)
 - `03` - Function code (Read Holding Registers)
 - `2000` - Start address (0x2000)
@@ -142,6 +144,7 @@ command := modbus.BuildModbusCommand(0x0B, 0x03, 0x4000, 0x0016)
 ```
 
 **Breakdown**:
+
 - `0B` - Slave ID
 - `03` - Function code
 - `4000` - Start address (0x4000)
@@ -189,6 +192,7 @@ go test ./unit -run TestCRC -v
 ```
 
 Test coverage includes:
+
 - ✅ CRC-16 calculation accuracy
 - ✅ Append CRC functionality
 - ✅ CRC verification
@@ -212,7 +216,7 @@ Test coverage includes:
 
 For command `0B 03 20 00 00 22`:
 
-```
+```log
 Initial CRC:     0xFFFF
 After byte 0x0B: 0xF4F4
 After byte 0x03: 0xF7F7
@@ -227,6 +231,7 @@ Final CRC: `0xBF47` → stored as `47 BF` (little-endian)
 ## Error Detection
 
 The CRC-16 can detect:
+
 - All single-bit errors
 - All double-bit errors
 - All errors with odd number of bits

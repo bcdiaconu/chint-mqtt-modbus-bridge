@@ -9,8 +9,9 @@ import (
 )
 
 // TopicHandler defines the interface for different topic handlers
+// Each handler publishes discovery and state for sensors
 type TopicHandler interface {
-	PublishDiscovery(ctx context.Context, client paho.Client, result *modbus.CommandResult) error
+	PublishDiscovery(ctx context.Context, client paho.Client, result *modbus.CommandResult, deviceInfo *DeviceInfo) error
 	PublishState(ctx context.Context, client paho.Client, result *modbus.CommandResult) error
 	GetTopicPrefix() string
 	ValidateData(result *modbus.CommandResult, register *config.Register) error

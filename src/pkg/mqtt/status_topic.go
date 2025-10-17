@@ -23,7 +23,7 @@ func NewStatusTopic(config *config.HAConfig) *StatusTopic {
 }
 
 // PublishDiscovery for status topic (not applicable)
-func (s *StatusTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, result *modbus.CommandResult) error {
+func (s *StatusTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, result *modbus.CommandResult, deviceInfo *DeviceInfo) error {
 	// Status topics don't need discovery configuration
 	return nil
 }

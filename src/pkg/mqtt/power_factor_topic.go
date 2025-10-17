@@ -25,7 +25,7 @@ func NewPowerFactorTopic(config *config.HAConfig) *PowerFactorTopic {
 }
 
 // PublishDiscovery publishes power factor sensor discovery configuration
-func (pf *PowerFactorTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, result *modbus.CommandResult) error {
+func (pf *PowerFactorTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, result *modbus.CommandResult, deviceInfo *DeviceInfo) error {
 	if !client.IsConnected() {
 		return fmt.Errorf("client is not connected")
 	}
@@ -33,24 +33,32 @@ func (pf *PowerFactorTopic) PublishDiscovery(ctx context.Context, client mqtt.Cl
 	// Extract sensor name from topic
 	sensorName := extractSensorName(result.Topic)
 
-	// Topic for discovery
-	discoveryTopic := fmt.Sprintf("%s/sensor/%s_%s/config",
-		pf.config.DiscoveryPrefix, pf.config.DeviceID, sensorName)
-
-	// Configuration for the power factor sensor
-	config := SensorConfig{
-		Name:              result.Name,
-		UniqueID:          fmt.Sprintf("%s_%s", pf.config.DeviceID, sensorName),
-		StateTopic:        result.Topic + "/state",
-		UnitOfMeasurement: result.Unit,
-		DeviceClass:       result.DeviceClass,
-		StateClass:        result.StateClass,
-		Device: DeviceInfo{
+	// Use device info if provided, otherwise fall back to deprecated global config
+	var device DeviceInfo
+	if deviceInfo != nil {
+		device = *deviceInfo
+	} else {
+		device = DeviceInfo{
 			Name:         pf.config.DeviceName,
 			Identifiers:  []string{pf.config.DeviceID},
 			Manufacturer: pf.config.Manufacturer,
 			Model:        pf.config.Model,
-		},
+		}
+	}
+
+	// Topic for discovery
+	discoveryTopic := fmt.Sprintf("%s/sensor/%s_%s/config",
+		pf.config.DiscoveryPrefix, device.Identifiers[0], sensorName)
+
+	// Configuration for the power factor sensor
+	config := SensorConfig{
+		Name:                result.Name,
+		UniqueID:            fmt.Sprintf("%s_%s", device.Identifiers[0], sensorName),
+		StateTopic:          result.Topic + "/state",
+		UnitOfMeasurement:   result.Unit,
+		DeviceClass:         result.DeviceClass,
+		StateClass:          result.StateClass,
+		Device:              device,
 		ValueTemplate:       "{{ value_json.value | round(2) }}",
 		AvailabilityTopic:   pf.config.StatusTopic,
 		PayloadAvailable:    "online",

@@ -16,20 +16,22 @@ Reactive power (Q) is an important electrical parameter that cannot be measured 
 
 The reactive power is calculated using the following formula:
 
-```
-Q = √(S² - P²)
+```math
+Q = \sqrt{S^2 - P^2}
 ```
 
 Where:
-- Q = Reactive power (VAR)
-- S = Apparent power (VA)
-- P = Active power (W)
+
+- $Q$ = Reactive power (VAR)
+- $S$ = Apparent power (VA)
+- $P$ = Active power (W)
 
 ## Implementation
 
 ### Group-Based Calculation
 
 When the `instant_group` is executed, it reads multiple registers in a single Modbus query for efficiency. This includes:
+
 - Voltage
 - Current
 - Active Power (`power_active`)
@@ -45,12 +47,10 @@ After the group is executed and results are parsed, the reactive power is calcul
 
 ### Code Flow
 
-```
 1. Execute instant_group → Read all instant registers in one query
 2. Parse results → Extract power_active and power_apparent values
-3. Calculate reactive power → Q = √(S² - P²)
+3. Calculate reactive power → Q = \sqrt{S^2 - P^2}
 4. Publish all results → Including calculated reactive power
-```
 
 ### Error Handling
 
@@ -92,6 +92,7 @@ if !app.isEnergyRegister(name) && name != "power_reactive" {
 ```
 
 This is because:
+
 1. It doesn't correspond to a physical Modbus register
 2. It's calculated after the group execution
 3. Including it would cause parsing errors (no physical register to read)
@@ -109,23 +110,26 @@ func TestReactivePowerCalculationFromGroupResults(t *testing.T) {
         "power_apparent": 2300.0, // 2300 VA
     }
     
-    // Expected: Q = √(2300² - 2000²) ≈ 1135.78 VAR
+    // Expected: Q = sqrt(2300^2 - 2000^2) ≈ 1135.78 VAR
 }
 ```
 
 ## Benefits
 
 ### Performance
+
 - **Single Modbus Query**: All instant values read together
 - **No Duplicate Reads**: Reuses already-read power values
 - **Instant Calculation**: Mathematical operation is fast
 
 ### Accuracy
+
 - **Temporal Consistency**: All values from same timestamp
 - **Reduced Network Traffic**: One query instead of three
 - **Error Validation**: Handles measurement errors gracefully
 
 ### Home Assistant Integration
+
 - Reactive power appears as a standard sensor
 - Updates together with other instant measurements
 - Properly classified with `device_class: reactive_power`
@@ -133,6 +137,7 @@ func TestReactivePowerCalculationFromGroupResults(t *testing.T) {
 ## Future Enhancements
 
 Potential improvements:
+
 1. Add configurable validation thresholds
 2. Track calculation errors separately
 3. Support alternative calculation methods (e.g., from current and voltage)

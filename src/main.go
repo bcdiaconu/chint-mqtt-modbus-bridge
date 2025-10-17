@@ -663,6 +663,77 @@ func (app *Application) handleGatewaySuccess(ctx context.Context) {
 func (app *Application) publishDiscoveryConfigs(ctx context.Context) error {
 	logger.LogDebug("🔍 Publishing discovery configurations for Home Assistant...")
 
+	// Check if using V2.1 (device-based) configuration
+	if len(app.config.Devices) > 0 {
+		// V2.1: Publish discovery per device
+		return app.publishDiscoveryConfigsV21(ctx)
+	}
+
+	// V2.0/V1: Use global device (backward compatibility)
+	return app.publishDiscoveryConfigsLegacy(ctx)
+}
+
+// publishDiscoveryConfigsV21 publishes discoveries for V2.1 device-based config
+func (app *Application) publishDiscoveryConfigsV21(ctx context.Context) error {
+	for deviceKey, device := range app.config.Devices {
+		if !device.IsEnabled() {
+			logger.LogDebug("⏭️ Skipping disabled device: %s", deviceKey)
+			continue
+		}
+
+		// Build DeviceInfo for this Modbus device
+		// Use device_id from homeassistant config, or deviceKey as fallback
+		haDeviceID := device.GetHADeviceID(deviceKey)
+
+		deviceInfo := &mqtt.DeviceInfo{
+			Name:         device.GetHADeviceName(),
+			Identifiers:  []string{haDeviceID},
+			Manufacturer: device.GetHAManufacturer(),
+			Model:        device.GetHAModel(),
+		}
+
+		logger.LogDebug("📡 Publishing discovery for device: %s (slave_id=%d)", device.GetName(), device.GetSlaveID())
+
+		// Create mock results for this device's sensors
+		var deviceResults []*modbus.CommandResult
+		for _, group := range device.Modbus.RegisterGroups {
+			for _, register := range group.Registers {
+				// Construct the full HA topic path automatically
+				topic := config.ConstructHATopic(haDeviceID, register.Key, register.DeviceClass)
+
+				result := &modbus.CommandResult{
+					Strategy:    register.Key,
+					Name:        register.Name,
+					Value:       0, // Mock value
+					Unit:        register.Unit,
+					Topic:       topic,
+					DeviceClass: register.DeviceClass,
+					StateClass:  register.StateClass,
+				}
+				deviceResults = append(deviceResults, result)
+			}
+		}
+
+		// Publish sensor discoveries for this device
+		if err := app.publisher.PublishAllDiscoveries(ctx, deviceResults, deviceInfo); err != nil {
+			logger.LogWarn("⚠️ Error publishing discoveries for device %s: %v", deviceKey, err)
+			// Continue with other devices
+		}
+
+		// Small pause between devices
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	// Publish bridge-level diagnostic sensor discovery
+	if err := app.publisher.PublishDiagnosticDiscovery(ctx); err != nil {
+		logger.LogError("⚠️ Error publishing diagnostic discovery: %v", err)
+	}
+
+	return nil
+}
+
+// publishDiscoveryConfigsLegacy publishes discoveries for V2.0/V1 configs (backward compatibility)
+func (app *Application) publishDiscoveryConfigsLegacy(ctx context.Context) error {
 	// Create mock results for discovery
 	var results []*modbus.CommandResult
 	for name, command := range app.commands {
@@ -678,8 +749,8 @@ func (app *Application) publishDiscoveryConfigs(ctx context.Context) error {
 		results = append(results, result)
 	}
 
-	// Publish sensor discoveries
-	if err := app.publisher.PublishAllDiscoveries(ctx, results); err != nil {
+	// Publish sensor discoveries with nil deviceInfo (uses global config)
+	if err := app.publisher.PublishAllDiscoveries(ctx, results, nil); err != nil {
 		return err
 	}
 
