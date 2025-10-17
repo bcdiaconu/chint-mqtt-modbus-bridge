@@ -10,12 +10,16 @@ import (
 
 // Config represents the complete application configuration
 // Follows SRP - only responsible for configuration management
+// Supports both V1 (registers) and V2 (register_groups) formats
 type Config struct {
-	MQTT          MQTTConfig           `yaml:"mqtt"`
-	HomeAssistant HAConfig             `yaml:"homeassistant"`
-	Modbus        ModbusConfig         `yaml:"modbus"`
-	Registers     map[string]Register  `yaml:"registers"`
-	Logging       logger.LoggingConfig `yaml:"logging"`
+	Version        string                        `yaml:"version,omitempty"` // Configuration version (optional, default 1.0)
+	MQTT           MQTTConfig                    `yaml:"mqtt"`
+	HomeAssistant  HAConfig                      `yaml:"homeassistant"`
+	Modbus         ModbusConfig                  `yaml:"modbus"`
+	Registers      map[string]Register           `yaml:"registers,omitempty"`            // V1 format
+	RegisterGroups map[string]RegisterGroup      `yaml:"register_groups,omitempty"`      // V2 format
+	CalculatedRegs map[string]CalculatedRegister `yaml:"calculated_registers,omitempty"` // V2 format
+	Logging        logger.LoggingConfig          `yaml:"logging"`
 }
 
 // MQTTConfig contains MQTT broker and gateway settings
@@ -71,7 +75,7 @@ type Register struct {
 	MaxKwhPerHour *float64 `yaml:"max_kwh_per_hour,omitempty"` // Maximum kWh change per hour for energy registers (optional)
 }
 
-// LoadConfig loads configuration from specified file
+// LoadConfig loads configuration from specified file with version detection
 func LoadConfig(configPath string) (*Config, error) {
 	// Try to find configuration file in different locations
 	paths := []string{
@@ -101,9 +105,40 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("cannot read configuration file from any of the locations: %v. Last error: %w", paths, err)
 	}
 
+	// First, parse just the version to validate compatibility
+	var versionCheck VersionInfo
+	if err := yaml.Unmarshal(data, &versionCheck); err != nil {
+		return nil, fmt.Errorf("error parsing configuration version from %s: %w", usedPath, err)
+	}
+
+	// If no version specified, assume V1 (backward compatibility)
+	if versionCheck.Version == "" {
+		logger.LogWarn("⚠️  No 'version' field in configuration, assuming legacy format (1.0)")
+		versionCheck.Version = "1.0"
+	}
+
+	// Validate version compatibility
+	if versionCheck.Version == "2.0" {
+		if err := ValidateVersion(versionCheck.Version); err != nil {
+			logger.LogError("❌ Configuration version incompatibility in %s: %v", usedPath, err)
+			logger.LogError("   Current parser version: %s", CurrentVersion)
+			logger.LogError("   Minimum compatible version: %s", MinCompatibleVersion)
+			logger.LogError("   File version: %s", versionCheck.Version)
+			return nil, err
+		}
+		logger.LogInfo("✅ Configuration version %s is compatible (parser version: %s)",
+			versionCheck.Version, CurrentVersion)
+	}
+
+	// Parse the full configuration
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("error parsing configuration from %s: %w", usedPath, err)
+	}
+
+	// Set version if not present (backward compatibility)
+	if config.Version == "" {
+		config.Version = "1.0"
 	}
 
 	// Configuration validation
@@ -111,49 +146,74 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("invalid configuration in %s: %w", usedPath, err)
 	}
 
+	logger.LogInfo("✅ Configuration loaded successfully from %s (version: %s)", usedPath, config.Version)
 	return &config, nil
 }
 
 // Validate checks if the configuration is valid
+// Supports both V1 (registers) and V2 (register_groups) formats
 func (c *Config) Validate() error {
+	// Common validation
 	if c.MQTT.Broker == "" {
-		return fmt.Errorf("MQTT broker is not specified")
+		return fmt.Errorf("mqtt.broker is not specified")
 	}
 	if c.MQTT.Port <= 0 {
-		return fmt.Errorf("MQTT port must be positive")
+		return fmt.Errorf("mqtt.port must be positive")
 	}
 	if c.MQTT.Gateway.MAC == "" {
-		return fmt.Errorf("gateway MAC is not specified")
-	}
-	if c.Modbus.SlaveID == 0 {
-		return fmt.Errorf("Modbus Slave ID must be specified")
+		return fmt.Errorf("mqtt.gateway.mac is not specified")
 	}
 	if c.Modbus.PollInterval <= 0 {
-		return fmt.Errorf("Modbus poll interval must be positive")
+		return fmt.Errorf("modbus.poll_interval must be positive")
 	}
 	if c.Modbus.RegisterDelay < 0 {
-		return fmt.Errorf("Modbus register delay must be non-negative")
+		return fmt.Errorf("modbus.register_delay must be non-negative")
 	}
 	if c.Modbus.EnergyDelay < 0 {
-		return fmt.Errorf("Modbus energy delay must be non-negative")
-	}
-	if len(c.Registers) == 0 {
-		return fmt.Errorf("no registers are defined")
+		return fmt.Errorf("modbus.energy_delay must be non-negative")
 	}
 	if c.HomeAssistant.StatusTopic == "" {
-		return fmt.Errorf("Home Assistant status topic is not specified")
+		return fmt.Errorf("homeassistant.status_topic is not specified")
 	}
 	if c.HomeAssistant.DiagnosticTopic == "" {
-		return fmt.Errorf("Home Assistant diagnostic topic is not specified")
+		return fmt.Errorf("homeassistant.diagnostic_topic is not specified")
 	}
 
-	// Register validation
-	for name, reg := range c.Registers {
-		if reg.Name == "" {
-			return fmt.Errorf("register %s has no name", name)
+	// Version-specific validation
+	if c.Version == "2.0" {
+		// V2 format validation
+		if c.Modbus.SlaveID == 0 {
+			logger.LogWarn("⚠️  modbus.slave_id is 0, groups must specify their own slave_id")
 		}
-		if reg.HATopic == "" {
-			return fmt.Errorf("register %s has no Home Assistant topic", name)
+
+		// Validate register groups (V2 format)
+		if err := ValidateGroups(c.RegisterGroups, c.CalculatedRegs); err != nil {
+			return err
+		}
+
+		// Convert groups to registers for backward compatibility with existing code
+		if len(c.Registers) == 0 {
+			c.Registers = ConvertGroupsToRegisters(c.RegisterGroups)
+			logger.LogInfo("✅ Converted %d register groups to %d individual registers",
+				len(c.RegisterGroups), len(c.Registers))
+		}
+	} else {
+		// V1 format validation
+		if c.Modbus.SlaveID == 0 {
+			return fmt.Errorf("modbus.slave_id must be specified")
+		}
+		if len(c.Registers) == 0 {
+			return fmt.Errorf("no registers are defined")
+		}
+
+		// Register validation
+		for name, reg := range c.Registers {
+			if reg.Name == "" {
+				return fmt.Errorf("register %s has no name", name)
+			}
+			if reg.HATopic == "" {
+				return fmt.Errorf("register %s has no Home Assistant topic", name)
+			}
 		}
 	}
 

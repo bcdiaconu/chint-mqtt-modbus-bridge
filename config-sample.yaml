@@ -1,5 +1,10 @@
-# MQTT-Modbus Bridge Configuration
+# MQTT-Modbus Bridge Configuration Version 2.0
 # Configuration for bridge between USR-DR164 and Home Assistant
+# This version uses register groups for optimized Modbus commands
+
+# Configuration version - REQUIRED
+# Parser will validate compatibility with this version
+version: "2.0"
 
 # MQTT Broker Configuration
 mqtt:
@@ -29,109 +34,134 @@ homeassistant:
 
 # Modbus Device Configuration
 modbus:
-  slave_id: 11
-  poll_interval: 1000       # milliseconds between register set readings
-  register_delay: 100       # milliseconds between register reads
-  energy_delay: 1000        # milliseconds between energy register reads (kWh meters)
-  timeout: 5                # timeout for responses
-  republish_interval: 4     # hours between forced republishing of energy sensors
+  slave_id: 11                  # Default Modbus slave ID (can be overridden per group)
+  poll_interval: 1000           # milliseconds between register set readings
+  register_delay: 100           # milliseconds between register reads
+  energy_delay: 1000            # milliseconds between energy register reads (kWh meters)
+  timeout: 5                    # timeout for responses
+  republish_interval: 4         # hours between forced republishing of energy sensors
 
-# Modbus Registers with Strategy Pattern
-registers:
-  voltage:
-    name: "Voltage"
-    address: 0x2000
-    unit: "V"
-    device_class: "voltage"
-    state_class: "measurement"
-    ha_topic: "sensor/energy_meter/voltage"
-    min: 100.0      # Minimum acceptable voltage
-    max: 300.0      # Maximum acceptable voltage
-    
-  frequency:
-    name: "Frequency"
-    address: 0x2020
-    unit: "Hz"
-    device_class: "frequency"
-    state_class: "measurement"
-    ha_topic: "sensor/energy_meter/frequency"
-    min: 45.0       # Minimum acceptable frequency
-    max: 65.0       # Maximum acceptable frequency
-    
-  current:
-    name: "Current"
-    address: 0x2002
-    unit: "A"
-    device_class: "current"
-    state_class: "measurement"
-    ha_topic: "sensor/energy_meter/current"
-    min: 0.0        # Minimum acceptable current
-    max: 100.0      # Maximum acceptable current
-    
-  energy_total:
-    name: "Active Energy"
-    address: 0x4000
-    unit: "kWh"
-    device_class: "energy"
-    state_class: "total_increasing"
-    ha_topic: "sensor/energy_meter/energy_total"
-    max_kwh_per_hour: 20.0    # Maximum 20 kWh change per hour
-    
-  energy_imported:
-    name: "Imported Energy"
-    address: 0x400A
-    unit: "kWh"
-    device_class: "energy"
-    state_class: "total_increasing"
-    ha_topic: "sensor/energy_meter/energy_imported"
-    max_kwh_per_hour: 64.0    # Maximum 64 kWh import per hour (high consumption)
-    
-  energy_exported:
-    name: "Exported Energy"
-    address: 0x4014
-    unit: "kWh"
-    device_class: "energy"
-    state_class: "total_increasing"
-    ha_topic: "sensor/energy_meter/energy_exported"
-    max_kwh_per_hour: 3.0     # Maximum 3 kWh export per hour (3kW solar panel)
-    
-  power_factor:
-    name: "Power Factor"
-    address: 0x2018
-    unit: ""
-    device_class: "power_factor"
-    state_class: "measurement"
-    ha_topic: "sensor/energy_meter/power_factor"
-    min: -1.0       # Minimum power factor
-    max: 1.0        # Maximum power factor
-    
-  power_apparent:
-    name: "Apparent Power"
-    address: 0x2012
-    unit: "VA"
-    device_class: "apparent_power"
-    state_class: "measurement"
-    ha_topic: "sensor/energy_meter/power_apparent"
-    min: 0.0        # Minimum power
-    max: 100000.0   # Maximum 100kVA
-    
-  power_active:
-    name: "Active Power"
-    address: 0x2006
-    unit: "W"
-    device_class: "power"
-    state_class: "measurement"
-    ha_topic: "sensor/energy_meter/power_active"
-    min: -50000.0   # Minimum power (can be negative for export)
-    max: 50000.0    # Maximum 50kW
+# Modbus Register Groups - Optimized batch reads
+# Each group defines a contiguous block of registers to read in a single command
+register_groups:
+  instant:
+    name: "Instant Measurements"
+    slave_id: 11                # Modbus device ID
+    function_code: 0x03         # Read Holding Registers
+    start_address: 0x2000       # First register address
+    register_count: 34          # Number of 16-bit registers to read (0x22)
+    enabled: true
+    # Registers included in this group (address relative to start_address)
+    registers:
+      - key: "voltage"
+        name: "Voltage"
+        offset: 0               # 0x2000 - 0x2000 = 0 (bytes 0-3)
+        unit: "V"
+        device_class: "voltage"
+        state_class: "measurement"
+        ha_topic: "sensor/energy_meter/voltage"
+        min: 100.0
+        max: 300.0
+        
+      - key: "current"
+        name: "Current"
+        offset: 4               # 0x2002 - 0x2000 = 2 registers = 4 bytes
+        unit: "A"
+        device_class: "current"
+        state_class: "measurement"
+        ha_topic: "sensor/energy_meter/current"
+        min: 0.0
+        max: 100.0
+        
+      - key: "power_active"
+        name: "Active Power"
+        offset: 12              # 0x2006 - 0x2000 = 6 registers = 12 bytes
+        unit: "W"
+        device_class: "power"
+        state_class: "measurement"
+        ha_topic: "sensor/energy_meter/power_active"
+        min: -50000.0
+        max: 50000.0
+        
+      - key: "power_apparent"
+        name: "Apparent Power"
+        offset: 36              # 0x2012 - 0x2000 = 18 registers = 36 bytes
+        unit: "VA"
+        device_class: "apparent_power"
+        state_class: "measurement"
+        ha_topic: "sensor/energy_meter/power_apparent"
+        min: 0.0
+        max: 100000.0
+        
+      - key: "power_factor"
+        name: "Power Factor"
+        offset: 48              # 0x2018 - 0x2000 = 24 registers = 48 bytes
+        unit: ""
+        device_class: "power_factor"
+        state_class: "measurement"
+        ha_topic: "sensor/energy_meter/power_factor"
+        min: -1.0
+        max: 1.0
+        
+      - key: "frequency"
+        name: "Frequency"
+        offset: 64              # 0x2020 - 0x2000 = 32 registers = 64 bytes
+        unit: "Hz"
+        device_class: "frequency"
+        state_class: "measurement"
+        ha_topic: "sensor/energy_meter/frequency"
+        min: 45.0
+        max: 65.0
 
+  energy:
+    name: "Energy Counters"
+    slave_id: 11
+    function_code: 0x03
+    start_address: 0x4000
+    register_count: 22          # Number of registers (0x16)
+    enabled: true
+    registers:
+      - key: "energy_total"
+        name: "Active Energy"
+        offset: 0               # 0x4000 - 0x4000 = 0
+        unit: "kWh"
+        device_class: "energy"
+        state_class: "total_increasing"
+        ha_topic: "sensor/energy_meter/energy_total"
+        max_kwh_per_hour: 20.0
+        
+      - key: "energy_imported"
+        name: "Imported Energy"
+        offset: 20              # 0x400A - 0x4000 = 10 registers = 20 bytes
+        unit: "kWh"
+        device_class: "energy"
+        state_class: "total_increasing"
+        ha_topic: "sensor/energy_meter/energy_imported"
+        max_kwh_per_hour: 64.0
+        
+      - key: "energy_exported"
+        name: "Exported Energy"
+        offset: 40              # 0x4014 - 0x4000 = 20 registers = 40 bytes
+        unit: "kWh"
+        device_class: "energy"
+        state_class: "total_increasing"
+        ha_topic: "sensor/energy_meter/energy_exported"
+        max_kwh_per_hour: 3.0
+
+# Virtual/Calculated Registers
+calculated_registers:
   power_reactive:
     name: "Reactive Power"
-    address: 0x0000  # Virtual address - calculated from other values
     unit: "var"
     device_class: "reactive_power"
     state_class: "measurement"
     ha_topic: "sensor/energy_meter/power_reactive"
+    # Calculated from: Q = √(S² - P²)
+    # Where S = power_apparent, P = power_active
+    formula: "sqrt(power_apparent^2 - power_active^2)"
+    depends_on:
+      - "power_apparent"
+      - "power_active"
 
 # Logging
 logging:

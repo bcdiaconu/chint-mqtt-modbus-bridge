@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/logger"
+	"mqtt-modbus-bridge/pkg/modbus"
 	"sync"
 	"time"
 
@@ -232,6 +233,12 @@ func (g *USRGateway) onMessage(client mqtt.Client, msg mqtt.Message) {
 	data := msg.Payload()
 	logger.LogTrace("Gateway received message on %s: %02X", msg.Topic(), data)
 
+	// Verify CRC of the received message
+	if !modbus.VerifyCRC(data) {
+		logger.LogWarn("Received message with invalid CRC, ignoring: %02X", data)
+		return
+	}
+
 	// Extract useful data from Modbus response
 	if len(data) >= 5 {
 		// Skip Slave ID, Function Code and Byte Count
@@ -253,41 +260,10 @@ func (g *USRGateway) onMessage(client mqtt.Client, msg mqtt.Message) {
 	}
 }
 
-// buildModbusCommand builds a Modbus RTU command as binary data
+// buildModbusCommand builds a Modbus RTU command using the centralized CRC calculation
 func (g *USRGateway) buildModbusCommand(slaveID uint8, functionCode uint8, address uint16, count uint16) []byte {
-	cmd := make([]byte, 8)
-	cmd[0] = slaveID
-	cmd[1] = functionCode
-	cmd[2] = byte(address >> 8)   // Address High
-	cmd[3] = byte(address & 0xFF) // Address Low
-	cmd[4] = byte(count >> 8)     // Count High
-	cmd[5] = byte(count & 0xFF)   // Count Low
-
-	// Calculate CRC16
-	crc := g.calculateCRC16(cmd[:6])
-	cmd[6] = byte(crc & 0xFF) // CRC Low
-	cmd[7] = byte(crc >> 8)   // CRC High
-
-	return cmd
-}
-
-// calculateCRC16 calculates CRC16 for Modbus RTU
-func (g *USRGateway) calculateCRC16(data []byte) uint16 {
-	crc := uint16(0xFFFF)
-
-	for _, b := range data {
-		crc ^= uint16(b)
-		for i := 0; i < 8; i++ {
-			if crc&1 != 0 {
-				crc >>= 1
-				crc ^= 0xA001
-			} else {
-				crc >>= 1
-			}
-		}
-	}
-
-	return crc
+	// Use the centralized BuildModbusCommand function which automatically calculates CRC
+	return modbus.BuildModbusCommand(slaveID, functionCode, address, count)
 }
 
 // SendDiagnosticCommand sends a diagnostic command to test gateway connectivity
