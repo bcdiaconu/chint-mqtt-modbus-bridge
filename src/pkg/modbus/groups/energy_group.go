@@ -89,11 +89,9 @@ func (g *EnergyGroup) ParseResults(rawData []byte) (map[string]float64, error) {
 }
 
 func (g *EnergyGroup) GetNames() []string {
-	names := make([]string, len(g.Registers))
-	for i, reg := range g.Registers {
-		names[i] = reg.Name
-	}
-	return names
+	// Return the register keys (command names) instead of display names
+	// This ensures fallback to individual reads works with device-prefixed keys
+	return g.RegisterKeys
 }
 
 var _ GroupStrategy = (*EnergyGroup)(nil)
