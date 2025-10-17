@@ -246,8 +246,8 @@ logging:
 }
 
 func TestVersionConstants(t *testing.T) {
-	if config.CurrentVersion != "2.0" {
-		t.Errorf("Expected CurrentVersion to be 2.0, got %s", config.CurrentVersion)
+	if config.CurrentVersion != "2.1" {
+		t.Errorf("Expected CurrentVersion to be 2.1, got %s", config.CurrentVersion)
 	}
 	if config.MinCompatibleVersion != "2.0" {
 		t.Errorf("Expected MinCompatibleVersion to be 2.0, got %s", config.MinCompatibleVersion)

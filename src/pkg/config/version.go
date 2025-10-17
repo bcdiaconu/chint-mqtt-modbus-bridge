@@ -5,9 +5,10 @@ import "fmt"
 // Config file format version constants
 const (
 	// CurrentVersion is the configuration version this code can parse
-	CurrentVersion = "2.0"
+	CurrentVersion = "2.1"
 
 	// MinCompatibleVersion is the minimum config version compatible with this code
+	// V2.0 (register_groups) and V2.1 (devices) are both supported
 	MinCompatibleVersion = "2.0"
 )
 
@@ -22,9 +23,8 @@ func ValidateVersion(fileVersion string) error {
 		return fmt.Errorf("configuration file missing 'version' field. Expected version: %s", CurrentVersion)
 	}
 
-	if fileVersion != CurrentVersion {
-		// For now, we only support exact version match
-		// In the future, we can add semantic versioning logic here
+	// Support both 2.0 and 2.1
+	if fileVersion != "2.0" && fileVersion != "2.1" {
 		return fmt.Errorf("incompatible configuration version: %s (expected: %s, minimum: %s)",
 			fileVersion, CurrentVersion, MinCompatibleVersion)
 	}

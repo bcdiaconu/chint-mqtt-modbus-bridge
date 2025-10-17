@@ -10,15 +10,16 @@ import (
 
 // Config represents the complete application configuration
 // Follows SRP - only responsible for configuration management
-// Supports both V1 (registers) and V2 (register_groups) formats
+// Supports V1 (registers), V2.0 (register_groups), and V2.1 (devices) formats
 type Config struct {
 	Version        string                        `yaml:"version,omitempty"` // Configuration version (optional, default 1.0)
 	MQTT           MQTTConfig                    `yaml:"mqtt"`
 	HomeAssistant  HAConfig                      `yaml:"homeassistant"`
 	Modbus         ModbusConfig                  `yaml:"modbus"`
 	Registers      map[string]Register           `yaml:"registers,omitempty"`            // V1 format
-	RegisterGroups map[string]RegisterGroup      `yaml:"register_groups,omitempty"`      // V2 format
-	CalculatedRegs map[string]CalculatedRegister `yaml:"calculated_registers,omitempty"` // V2 format
+	RegisterGroups map[string]RegisterGroup      `yaml:"register_groups,omitempty"`      // V2.0 format
+	Devices        map[string]Device             `yaml:"devices,omitempty"`              // V2.1 format (recommended)
+	CalculatedRegs map[string]CalculatedRegister `yaml:"calculated_registers,omitempty"` // V2.0+ format
 	Logging        logger.LoggingConfig          `yaml:"logging"`
 }
 
@@ -180,13 +181,47 @@ func (c *Config) Validate() error {
 	}
 
 	// Version-specific validation
-	if c.Version == "2.0" {
-		// V2 format validation
+	if c.Version == "2.1" {
+		// V2.1 format validation (device-based)
+		if c.Modbus.SlaveID == 0 {
+			logger.LogWarn("⚠️  modbus.slave_id is 0 (devices specify their own slave_id)")
+		}
+
+		// Validate devices (V2.1 format - preferred)
+		if len(c.Devices) > 0 {
+			if err := ValidateDevices(c.Devices); err != nil {
+				return err
+			}
+
+			// Convert devices to flat groups for backward compatibility
+			if len(c.RegisterGroups) == 0 {
+				c.RegisterGroups = ConvertDevicesToGroups(c.Devices)
+				logger.LogInfo("✅ Converted %d devices to %d register groups",
+					len(c.Devices), len(c.RegisterGroups))
+			}
+		} else if len(c.RegisterGroups) > 0 {
+			// Fallback to V2.0 format (flat groups)
+			logger.LogWarn("⚠️  Using V2.0 format (register_groups). Consider upgrading to V2.1 (devices)")
+			if err := ValidateGroups(c.RegisterGroups, c.CalculatedRegs); err != nil {
+				return err
+			}
+		} else {
+			return fmt.Errorf("V2.1 config requires either 'devices' or 'register_groups'")
+		}
+
+		// Convert groups to registers for backward compatibility with existing code
+		if len(c.Registers) == 0 {
+			c.Registers = ConvertGroupsToRegisters(c.RegisterGroups)
+			logger.LogInfo("✅ Converted %d register groups to %d individual registers",
+				len(c.RegisterGroups), len(c.Registers))
+		}
+	} else if c.Version == "2.0" {
+		// V2.0 format validation (flat groups)
 		if c.Modbus.SlaveID == 0 {
 			logger.LogWarn("⚠️  modbus.slave_id is 0, groups must specify their own slave_id")
 		}
 
-		// Validate register groups (V2 format)
+		// Validate register groups (V2.0 format)
 		if err := ValidateGroups(c.RegisterGroups, c.CalculatedRegs); err != nil {
 			return err
 		}

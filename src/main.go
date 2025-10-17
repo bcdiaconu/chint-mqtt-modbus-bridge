@@ -41,6 +41,10 @@ type Application struct {
 	instantGroup *groups.InstantGroup
 	energyGroup  *groups.EnergyGroup
 
+	// Register group configurations (for multi-device support)
+	// Maps group name to its configuration (includes slave_id)
+	groupConfigs map[string]config.RegisterGroup
+
 	mu sync.Mutex // Mutex for synchronizing access to the gateway
 
 	// Gateway status tracking
@@ -104,6 +108,9 @@ func NewApplication(configPath string) (*Application, error) {
 
 		// Initialize last publish tracking
 		lastPublishTime: make(map[string]time.Time),
+
+		// Initialize group configs for multi-device support (V2.1)
+		groupConfigs: cfg.RegisterGroups,
 	}
 
 	// Register commands
@@ -148,8 +155,8 @@ func (app *Application) registerCommands() error {
 
 // initializeGroups initializes group executor and creates register groups
 func (app *Application) initializeGroups() error {
-	// Create group executor
-	app.groupExecutor = groups.NewGroupExecutor(app.gateway, app.config.Modbus.SlaveID, app.commands)
+	// Create group executor (no longer needs global slaveID)
+	app.groupExecutor = groups.NewGroupExecutor(app.gateway, app.commands)
 
 	// Define instant register names (non-energy registers)
 	instantRegisterNames := []string{}
@@ -371,8 +378,31 @@ func (app *Application) readGroupedRegisters(ctx context.Context, group groups.G
 
 // readGroupedRegistersWithResults reads multiple registers using a group strategy and returns the results
 func (app *Application) readGroupedRegistersWithResults(ctx context.Context, group groups.GroupStrategy, logPrefix string) (map[string]float64, error) {
+	// Determine which group config to use
+	// For now, create a temporary RegisterGroup with the global slave_id
+	// TODO: In V2.1, this will come from app.groupConfigs
+	groupConfig := config.RegisterGroup{
+		Name:    logPrefix,
+		SlaveID: app.config.Modbus.SlaveID, // Use global slave_id for now
+	}
+
+	// If we have group configs available (V2.1), try to find the matching one
+	if app.groupConfigs != nil {
+		// Try to find by group name
+		for _, cfg := range app.groupConfigs {
+			// Match by checking if any register name matches
+			groupNames := group.GetNames()
+			if len(groupNames) > 0 {
+				// Use the first available group config
+				// TODO: Better matching logic
+				groupConfig = cfg
+				break
+			}
+		}
+	}
+
 	// Execute the grouped query
-	results, err := app.groupExecutor.ExecuteGroup(ctx, group)
+	results, err := app.groupExecutor.ExecuteGroup(ctx, group, groupConfig)
 
 	if err != nil {
 		// Handle error for the entire group

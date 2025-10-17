@@ -8,17 +8,17 @@ import (
 )
 
 // GroupExecutor executes grouped Modbus queries
+// Now device-agnostic - uses slave_id from RegisterGroup
 type GroupExecutor struct {
 	gateway         modbus.Gateway
-	slaveID         uint8
 	commandRegistry map[string]modbus.ModbusCommand
 }
 
 // NewGroupExecutor creates a new group executor
-func NewGroupExecutor(gateway modbus.Gateway, slaveID uint8, commandRegistry map[string]modbus.ModbusCommand) *GroupExecutor {
+// Note: slaveID is now obtained from each RegisterGroup, not passed globally
+func NewGroupExecutor(gateway modbus.Gateway, commandRegistry map[string]modbus.ModbusCommand) *GroupExecutor {
 	return &GroupExecutor{
 		gateway:         gateway,
-		slaveID:         slaveID,
 		commandRegistry: commandRegistry,
 	}
 }
@@ -74,9 +74,16 @@ func (e *GroupExecutor) CreateEnergyGroup(registerNames []string, allRegisters m
 }
 
 // ExecuteGroup executes a group strategy and returns parsed results
-func (e *GroupExecutor) ExecuteGroup(ctx context.Context, group GroupStrategy) (map[string]float64, error) {
+// groupConfig: RegisterGroup configuration containing slave_id for this group
+func (e *GroupExecutor) ExecuteGroup(ctx context.Context, group GroupStrategy, groupConfig config.RegisterGroup) (map[string]float64, error) {
+	// Use slave_id from the RegisterGroup configuration
+	slaveID := groupConfig.SlaveID
+	if slaveID == 0 {
+		return nil, fmt.Errorf("group '%s' has no slave_id", groupConfig.Name)
+	}
+
 	// Execute the grouped query
-	rawData, err := group.Execute(ctx, e.gateway, e.slaveID)
+	rawData, err := group.Execute(ctx, e.gateway, slaveID)
 	if err != nil {
 		return nil, fmt.Errorf("error executing group query: %w", err)
 	}

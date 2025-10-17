@@ -1,171 +1,178 @@
-# MQTT-Modbus Bridge Configuration Version 2.0
-# Configuration for bridge between USR-DR164 and Home Assistant
-# This version uses register groups for optimized Modbus commands
+# MQTT-Modbus Bridge Configuration Version 2.1
+# Example: Multiple Modbus Devices on the Same RTU Bus
+# This configuration demonstrates monitoring multiple devices with different slave IDs
 
-# Configuration version - REQUIRED
-# Parser will validate compatibility with this version
-version: "2.0"
+version: "2.1"
 
-# MQTT Broker Configuration
 mqtt:
   broker: "localhost"
   port: 1883
   username: "mqtt"
   password: "mqtt_password"
   client_id: "modbus-bridge"
-  
-  # USR-DR164 Gateway
   gateway:
     mac: "D4AD20B75646"
     cmd_topic: "D4AD20B75646/cmd"
     data_topic: "D4AD20B75646/data"
 
-# Home Assistant MQTT Discovery Configuration
 homeassistant:
   discovery_prefix: "homeassistant"
-  device_name: "Energy Meter"
-  device_id: "energy_meter_001"
-  manufacturer: "Generic"
-  model: "Modbus Energy Meter"
-  
-  # Device status and diagnostics topics
-  status_topic: "modbus-bridge/status"          # online/offline status
-  diagnostic_topic: "modbus-bridge/diagnostic"  # error codes/messages
+  device_name: "Energy Monitoring System"
+  device_id: "energy_monitoring_001"
+  manufacturer: "Custom"
+  model: "Multi-Device Modbus RTU Bridge"
+  status_topic: "modbus-bridge/status"
+  diagnostic_topic: "modbus-bridge/diagnostic"
 
-# Modbus Device Configuration
 modbus:
-  slave_id: 11                  # Default Modbus slave ID (can be overridden per group)
-  poll_interval: 1000           # milliseconds between register set readings
-  register_delay: 100           # milliseconds between register reads
-  energy_delay: 1000            # milliseconds between energy register reads (kWh meters)
-  timeout: 5                    # timeout for responses
-  republish_interval: 4         # hours between forced republishing of energy sensors
+  slave_id: 0              # Not used in V2.1 (devices specify their own)
+  poll_interval: 1000      # Default: 1 second
+  register_delay: 50
+  energy_delay: 5000
+  timeout: 5000
+  republish_interval: 24
 
-# Modbus Register Groups - Optimized batch reads
-# Each group defines a contiguous block of registers to read in a single command
-register_groups:
-  instant:
-    name: "Instant Measurements"
-    slave_id: 11                # Modbus device ID
-    function_code: 0x03         # Read Holding Registers
-    start_address: 0x2000       # First register address
-    register_count: 34          # Number of 16-bit registers to read (0x22)
-    enabled: true
-    # Registers included in this group (address relative to start_address)
-    registers:
-      - key: "voltage"
-        name: "Voltage"
-        offset: 0               # 0x2000 - 0x2000 = 0 (bytes 0-3)
-        unit: "V"
-        device_class: "voltage"
-        state_class: "measurement"
-        ha_topic: "sensor/energy_meter/voltage"
-        min: 100.0
-        max: 300.0
-        
-      - key: "current"
-        name: "Current"
-        offset: 4               # 0x2002 - 0x2000 = 2 registers = 4 bytes
-        unit: "A"
-        device_class: "current"
-        state_class: "measurement"
-        ha_topic: "sensor/energy_meter/current"
-        min: 0.0
-        max: 100.0
-        
-      - key: "power_active"
-        name: "Active Power"
-        offset: 12              # 0x2006 - 0x2000 = 6 registers = 12 bytes
-        unit: "W"
-        device_class: "power"
-        state_class: "measurement"
-        ha_topic: "sensor/energy_meter/power_active"
-        min: -50000.0
-        max: 50000.0
-        
-      - key: "power_apparent"
-        name: "Apparent Power"
-        offset: 36              # 0x2012 - 0x2000 = 18 registers = 36 bytes
-        unit: "VA"
-        device_class: "apparent_power"
-        state_class: "measurement"
-        ha_topic: "sensor/energy_meter/power_apparent"
-        min: 0.0
-        max: 100000.0
-        
-      - key: "power_factor"
-        name: "Power Factor"
-        offset: 48              # 0x2018 - 0x2000 = 24 registers = 48 bytes
-        unit: ""
-        device_class: "power_factor"
-        state_class: "measurement"
-        ha_topic: "sensor/energy_meter/power_factor"
-        min: -1.0
-        max: 1.0
-        
-      - key: "frequency"
-        name: "Frequency"
-        offset: 64              # 0x2020 - 0x2000 = 32 registers = 64 bytes
-        unit: "Hz"
-        device_class: "frequency"
-        state_class: "measurement"
-        ha_topic: "sensor/energy_meter/frequency"
-        min: 45.0
-        max: 65.0
-
-  energy:
-    name: "Energy Counters"
+# Multiple devices on the same RTU bus
+# Each device has a unique slave_id (1-247)
+devices:
+  # First Energy Meter - Slave ID 11
+  energy_meter_1:
+    name: "Energy Meter 1"
     slave_id: 11
-    function_code: 0x03
-    start_address: 0x4000
-    register_count: 22          # Number of registers (0x16)
+    manufacturer: "Chint"
+    model: "DTSU666-H"
     enabled: true
-    registers:
-      - key: "energy_total"
-        name: "Active Energy"
-        offset: 0               # 0x4000 - 0x4000 = 0
-        unit: "kWh"
-        device_class: "energy"
-        state_class: "total_increasing"
-        ha_topic: "sensor/energy_meter/energy_total"
-        max_kwh_per_hour: 20.0
-        
-      - key: "energy_imported"
-        name: "Imported Energy"
-        offset: 20              # 0x400A - 0x4000 = 10 registers = 20 bytes
-        unit: "kWh"
-        device_class: "energy"
-        state_class: "total_increasing"
-        ha_topic: "sensor/energy_meter/energy_imported"
-        max_kwh_per_hour: 64.0
-        
-      - key: "energy_exported"
-        name: "Exported Energy"
-        offset: 40              # 0x4014 - 0x4000 = 20 registers = 40 bytes
-        unit: "kWh"
-        device_class: "energy"
-        state_class: "total_increasing"
-        ha_topic: "sensor/energy_meter/energy_exported"
-        max_kwh_per_hour: 3.0
+    register_groups:
+      # Groups can have any name (not limited to "instant" and "energy")
+      instant:
+        name: "Instant Readings"
+        function_code: 0x03  # Read Holding Registers
+        start_address: 0x2000
+        register_count: 34
+        enabled: true
+        registers:
+          - key: "voltage"
+            name: "Voltage"
+            offset: 0
+            unit: "V"
+            device_class: "voltage"
+            state_class: "measurement"
+            ha_topic: "meter1/voltage"
+          - key: "current"
+            name: "Current"
+            offset: 4
+            unit: "A"
+            device_class: "current"
+            state_class: "measurement"
+            ha_topic: "meter1/current"
+      
+      energy:
+        name: "Energy Counters"
+        function_code: 0x03
+        start_address: 0x4000
+        register_count: 22
+        enabled: true
+        registers:
+          - key: "energy_total"
+            name: "Total Energy"
+            offset: 0
+            unit: "kWh"
+            device_class: "energy"
+            state_class: "total_increasing"
+            ha_topic: "meter1/energy_total"
+  
+  # Second Energy Meter - Slave ID 12
+  energy_meter_2:
+    name: "Energy Meter 2"
+    slave_id: 12          # Different slave ID!
+    manufacturer: "Chint"
+    model: "DTSU666-H"
+    enabled: true
+    register_groups:
+      instant:
+        name: "Instant Readings"
+        function_code: 0x03
+        start_address: 0x2000
+        register_count: 34
+        enabled: true
+        registers:
+          - key: "voltage"
+            name: "Voltage"
+            offset: 0
+            unit: "V"
+            device_class: "voltage"
+            state_class: "measurement"
+            ha_topic: "meter2/voltage"
+          - key: "current"
+            name: "Current"
+            offset: 4
+            unit: "A"
+            device_class: "current"
+            state_class: "measurement"
+            ha_topic: "meter2/current"
+      
+      energy:
+        name: "Energy Counters"
+        function_code: 0x03
+        start_address: 0x4000
+        register_count: 22
+        enabled: true
+        registers:
+          - key: "energy_total"
+            name: "Total Energy"
+            offset: 0
+            unit: "kWh"
+            device_class: "energy"
+            state_class: "total_increasing"
+            ha_topic: "meter2/energy_total"
+  
+  # Solar Inverter - Slave ID 20
+  inverter_1:
+    name: "Solar Inverter"
+    slave_id: 20          # Different slave ID and device type!
+    manufacturer: "Growatt"
+    model: "MIN 3000TL-X"
+    enabled: true
+    poll_interval: 2000   # Override: poll every 2 seconds
+    register_groups:
+      # Custom group name (not "instant" or "energy")
+      status:
+        name: "Inverter Status"
+        function_code: 0x04  # Read Input Registers (different from meters!)
+        start_address: 0x0000
+        register_count: 30
+        enabled: true
+        registers:
+          - key: "pv_voltage"
+            name: "PV Voltage"
+            offset: 0
+            unit: "V"
+            device_class: "voltage"
+            state_class: "measurement"
+            ha_topic: "inverter/pv_voltage"
+          - key: "pv_power"
+            name: "PV Power"
+            offset: 8
+            unit: "W"
+            device_class: "power"
+            state_class: "measurement"
+            ha_topic: "inverter/pv_power"
+      
+      # Another custom group name
+      production:
+        name: "Energy Production"
+        function_code: 0x04
+        start_address: 0x0100
+        register_count: 10
+        enabled: true
+        registers:
+          - key: "energy_today"
+            name: "Energy Today"
+            offset: 0
+            unit: "kWh"
+            device_class: "energy"
+            state_class: "total_increasing"
+            ha_topic: "inverter/energy_today"
 
-# Virtual/Calculated Registers
-calculated_registers:
-  power_reactive:
-    name: "Reactive Power"
-    unit: "var"
-    device_class: "reactive_power"
-    state_class: "measurement"
-    ha_topic: "sensor/energy_meter/power_reactive"
-    # Calculated from: Q = √(S² - P²)
-    # Where S = power_apparent, P = power_active
-    formula: "sqrt(power_apparent^2 - power_active^2)"
-    depends_on:
-      - "power_apparent"
-      - "power_active"
-
-# Logging
 logging:
-  level: "info"      # error, warn, info, debug, trace
-  file: "/var/log/mqtt-modbus-bridge.log"
-  max_size: 100      # MB
-  max_age: 30        # days
+  level: "info"
