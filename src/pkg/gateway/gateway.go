@@ -140,7 +140,24 @@ func (g *USRGateway) IsConnected() bool {
 
 // SendCommand sends a Modbus command through MQTT - implements modbus.Gateway interface
 func (g *USRGateway) SendCommand(ctx context.Context, slaveID uint8, functionCode uint8, address uint16, count uint16) error {
-	// Check connection state with proper locking
+	// Wait for connection with short retry (handle brief disconnections during auto-reconnect)
+	maxWait := 3 * time.Second
+	deadline := time.Now().Add(maxWait)
+	
+	for time.Now().Before(deadline) {
+		g.mu.RLock()
+		connected := g.connected && g.client != nil && g.client.IsConnected()
+		g.mu.RUnlock()
+		
+		if connected {
+			break
+		}
+		
+		// Connection not ready, wait a bit before retrying
+		time.Sleep(100 * time.Millisecond)
+	}
+	
+	// Final connection check
 	g.mu.RLock()
 	connected := g.connected && g.client != nil && g.client.IsConnected()
 	g.mu.RUnlock()
