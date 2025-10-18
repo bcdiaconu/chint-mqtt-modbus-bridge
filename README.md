@@ -4,7 +4,7 @@ A robust and production-ready bridge for integrating Chint energy meters (Modbus
 
 **Supported Hardware:**
 
-- **Energy Meters:** 
+- **Energy Meters:**
   - [Chint DDSU666-H](docs/DDSU666-H.md) - Comprehensive single-phase meter with advanced features
   - [Chint DDSU666](docs/DDSU666.md) - Simplified single-phase meter (basic model)
 - **Gateway:** PUSR USR-DR164 (Modbus RTU <-> MQTT)
@@ -16,6 +16,7 @@ A robust bridge between USR-DR164 Modbus-MQTT Gateway and Home Assistant, implem
 ## Features
 
 ### Core Features
+
 - **SOLID Architecture**: Follows all SOLID principles for easy maintenance
 - **Strategy Pattern**: Each Modbus register type has its own parsing strategy
 - **Home Assistant Integration**: Auto-discovery and automatic sensor publishing
@@ -25,6 +26,7 @@ A robust bridge between USR-DR164 Modbus-MQTT Gateway and Home Assistant, implem
 - **Graceful Shutdown**: Safe shutdown with complete cleanup
 
 ### Multi-Device Support (V2.1+)
+
 - **Device-Based Configuration**: Organize multiple Modbus devices with segregated metadata, RTU, Modbus, and Home Assistant sections
 - **Unique Device Validation**: Automatic validation of device keys, slave IDs, and Home Assistant device IDs
 - **Flexible Device IDs**: Optional `homeassistant.device_id` with automatic fallback to device key
@@ -226,11 +228,13 @@ For more detailed testing documentation, see [tests/README.md](tests/README.md).
 Comprehensive documentation is available in the `docs/` directory:
 
 ### Getting Started
+
 - **[Configuration Reference](docs/CONFIG.md)** - Complete configuration format documentation (V2.0 and V2.1)
 - **[Multi-Device Support](docs/MULTI_DEVICE.md)** - Setting up multiple Modbus devices (V2.1+)
 - **[Migration Guide](docs/MIGRATION.md)** - Upgrading from V1, V2.0, or single-device to multi-device
 
 ### Technical Reference
+
 - **[Validation Rules](docs/VALIDATION.md)** - Configuration validation rules and examples
 - **[CRC Implementation](docs/CRC.md)** - Modbus CRC calculation details
 - **[Function Codes](docs/FUNCTION_CODE.md)** - Supported Modbus function codes

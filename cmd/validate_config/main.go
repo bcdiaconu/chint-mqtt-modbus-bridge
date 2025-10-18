@@ -1,8 +1,8 @@
 package main
 
 import (
+	"chint-mqtt-modbus-bridge/pkg/config"
 	"fmt"
-	"mqtt-modbus-bridge/pkg/config"
 	"os"
 )
 

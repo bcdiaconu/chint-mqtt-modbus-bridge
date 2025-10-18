@@ -6,14 +6,15 @@ This directory contains comprehensive tests for the CHINT MQTT-Modbus Bridge.
 
 ```
 tests/
-├── unit/                           # Unit tests
-│   ├── modbus_commands_test.go    # Command parsing tests
-│   ├── config_test.go              # Configuration tests
-│   └── factory_test.go             # Factory pattern tests
-├── integration/                    # Integration tests
-│   └── groups_integration_test.go  # Group execution tests
-├── go.mod                          # Test module definition
-└── README.md                       # This file
+├── unit/                              # Unit tests
+│   ├── crc_test.go                    # CRC16 calculation tests
+│   ├── config_test.go                 # Configuration loading/parsing tests
+│   ├── config_devices_test.go         # Device configuration validation tests
+│   ├── formula_validation_test.go     # Formula syntax validation tests
+│   └── version_test.go                # Version compatibility tests
+├── integration/                       # Integration tests (currently empty)
+├── go.mod                             # Test module definition
+└── README.md                          # This file
 ```
 
 ## Test Categories
@@ -22,15 +23,15 @@ tests/
 
 Tests for individual components in isolation:
 
-- **modbus_commands_test.go** - Tests parsing logic for all command types (voltage, current, power, frequency, power factor, energy)
-- **config_test.go** - Tests configuration loading, validation, and parsing
-- **factory_test.go** - Tests command factory creation and all supported command types
+- **crc_test.go** - Tests CRC16 calculation, verification, and round-trip consistency for Modbus RTU protocol
+- **config_test.go** - Tests YAML configuration loading, validation, and register configuration
+- **config_devices_test.go** - Tests device-based configuration structure, validation rules, and calculated values
+- **formula_validation_test.go** - Tests formula syntax parsing and variable extraction for calculated values
+- **version_test.go** - Tests configuration version compatibility and migration logic
 
 ### Integration Tests (`integration/`)
 
-Tests for component interactions:
-
-- **groups_integration_test.go** - Tests group creation, execution, and end-to-end workflows
+Tests for component interactions (to be implemented for Strategy Pattern integration testing)
 
 ## Running Tests
 

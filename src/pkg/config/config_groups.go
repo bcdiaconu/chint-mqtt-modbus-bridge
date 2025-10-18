@@ -19,17 +19,19 @@ type RegisterGroup struct {
 
 // GroupRegister defines a register within a group
 type GroupRegister struct {
-	Key           string  `yaml:"key"`                    // Unique identifier (e.g., "voltage")
-	Name          string  `yaml:"name"`                   // Display name
-	Offset        int     `yaml:"offset"`                 // Byte offset from group start
-	Unit          string  `yaml:"unit"`                   // Unit of measurement (V, A, W, kWh, etc.)
-	ScaleFactor   float64 `yaml:"scale_factor,omitempty"` // Multiplier to convert raw value to desired unit (default: 1.0)
-	DeviceClass   string  `yaml:"device_class"`
-	StateClass    string  `yaml:"state_class"`
-	HATopic       string  `yaml:"ha_topic,omitempty"` // Optional: Auto-constructed if not provided in v2.1
-	Min           float64 `yaml:"min,omitempty"`
-	Max           float64 `yaml:"max,omitempty"`
-	MaxKwhPerHour float64 `yaml:"max_kwh_per_hour,omitempty"`
+	Key           string   `yaml:"key"`                    // Unique identifier (e.g., "voltage")
+	Name          string   `yaml:"name"`                   // Display name
+	Offset        int      `yaml:"offset"`                 // Byte offset from group start (-1 for calculated registers)
+	Unit          string   `yaml:"unit"`                   // Unit of measurement (V, A, W, kWh, etc.)
+	ScaleFactor   float64  `yaml:"scale_factor,omitempty"` // Multiplier to convert raw value to desired unit (default: 1.0)
+	Formula       string   `yaml:"formula,omitempty"`      // Mathematical formula for calculated values (e.g., "sqrt(power_active^2 + power_reactive^2)")
+	DependsOn     []string `yaml:"depends_on,omitempty"`   // Register keys this calculation depends on
+	DeviceClass   string   `yaml:"device_class"`
+	StateClass    string   `yaml:"state_class"`
+	HATopic       string   `yaml:"ha_topic,omitempty"` // Optional: Auto-constructed if not provided in v2.1
+	Min           float64  `yaml:"min,omitempty"`
+	Max           float64  `yaml:"max,omitempty"`
+	MaxKwhPerHour float64  `yaml:"max_kwh_per_hour,omitempty"`
 }
 
 // CalculatedRegister defines a virtual register calculated from other registers
@@ -159,6 +161,8 @@ func ConvertGroupsToRegisters(groups map[string]RegisterGroup) map[string]Regist
 				Address:       address,
 				Unit:          reg.Unit,
 				ScaleFactor:   scaleFactor,
+				Formula:       reg.Formula,
+				DependsOn:     reg.DependsOn,
 				DeviceClass:   reg.DeviceClass,
 				StateClass:    reg.StateClass,
 				HATopic:       reg.HATopic,

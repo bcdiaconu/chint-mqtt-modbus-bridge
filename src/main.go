@@ -3,16 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"math"
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/gateway"
 	"mqtt-modbus-bridge/pkg/logger"
 	"mqtt-modbus-bridge/pkg/modbus"
-	"mqtt-modbus-bridge/pkg/modbus/groups"
 	"mqtt-modbus-bridge/pkg/mqtt"
 	"os"
 	"os/signal"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -31,20 +28,10 @@ const (
 // Application main application class
 // Facade Pattern - simplified interface for complex system
 type Application struct {
-	config        *config.Config
-	gateway       *gateway.USRGateway
-	executor      *modbus.CommandExecutor
-	groupExecutor *groups.GroupExecutor
-	publisher     *mqtt.Publisher
-	commands      map[string]modbus.ModbusCommand
-
-	// Group strategies for optimized reading
-	instantGroup *groups.InstantGroup
-	energyGroup  *groups.EnergyGroup
-
-	// Register group configurations (for multi-device support)
-	// Maps group name to its configuration (includes slave_id)
-	groupConfigs map[string]config.RegisterGroup
+	config    *config.Config
+	gateway   *gateway.USRGateway
+	executor  *modbus.StrategyExecutor
+	publisher *mqtt.Publisher
 
 	mu sync.Mutex // Mutex for synchronizing access to the gateway
 
@@ -82,8 +69,8 @@ func NewApplication(configPath string) (*Application, error) {
 	// Create gateway
 	gatewayInstance := gateway.NewUSRGateway(&cfg.MQTT)
 
-	// Create command executor
-	executor := modbus.NewCommandExecutor(gatewayInstance, &cfg.Modbus)
+	// Create strategy executor
+	executor := modbus.NewStrategyExecutor(gatewayInstance)
 
 	// Create publisher for Home Assistant
 	publisher := mqtt.NewPublisher(&cfg.MQTT, &cfg.HomeAssistant)
@@ -93,7 +80,6 @@ func NewApplication(configPath string) (*Application, error) {
 		gateway:   gatewayInstance,
 		executor:  executor,
 		publisher: publisher,
-		commands:  make(map[string]modbus.ModbusCommand),
 		// Initialize gateway status tracking
 		consecutiveErrors: 0,
 		isGatewayOnline:   true,
@@ -109,101 +95,35 @@ func NewApplication(configPath string) (*Application, error) {
 
 		// Initialize last publish tracking
 		lastPublishTime: make(map[string]time.Time),
-
-		// Initialize group configs for multi-device support (V2.1)
-		groupConfigs: cfg.RegisterGroups,
 	}
 
-	// Register commands
-	if err := app.registerCommands(); err != nil {
-		return nil, fmt.Errorf("error registering commands: %w", err)
-	}
-
-	// Initialize group executor and create groups
-	if err := app.initializeGroups(); err != nil {
-		return nil, fmt.Errorf("error initializing groups: %w", err)
+	// Register all strategies from devices
+	if err := app.registerStrategies(); err != nil {
+		return nil, fmt.Errorf("error registering strategies: %w", err)
 	}
 
 	return app, nil
 }
 
+// registerStrategies registers all strategies from device configuration
+func (app *Application) registerStrategies() error {
+	logger.LogInfo("🔧 Registering strategies from devices...")
+
+	// Register from V2.1 device configuration
+	if len(app.config.Devices) > 0 {
+		return app.executor.RegisterFromDevices(app.config.Devices)
+	}
+
+	// V2.0 compatibility: convert old format to devices
+	logger.LogInfo("⚠️ Using V2.0 configuration format (deprecated)")
+	// TODO: Implement V2.0 compatibility if needed
+	return fmt.Errorf("V2.0 format not yet supported with new strategy pattern")
+}
+
 // registerCommands registers all commands from configuration
 // Factory Pattern for creating commands
-func (app *Application) registerCommands() error {
-	factory := modbus.NewCommandFactory(app.config.Modbus.SlaveID)
-
-	for name, register := range app.config.Registers {
-		command, err := factory.CreateCommand(register)
-		if err != nil {
-			return fmt.Errorf("error creating command %s: %w", name, err)
-		}
-
-		app.executor.RegisterCommand(name, command)
-		app.commands[name] = command
-		logger.LogInfo("✅ Command registered: %s (%s)", name, register.Name)
-	}
-
-	// Set executor for reactive power commands that need it
-	for name, command := range app.commands {
-		if reactivePowerCommand, ok := command.(*modbus.ReactivePowerCommand); ok {
-			reactivePowerCommand.SetExecutor(app.executor)
-			logger.LogDebug("🔧 Executor set for reactive power command: %s", name)
-		}
-	}
-
-	return nil
-}
-
-// initializeGroups initializes group executor and creates register groups
-func (app *Application) initializeGroups() error {
-	// Create group executor (no longer needs global slaveID)
-	app.groupExecutor = groups.NewGroupExecutor(app.gateway, app.commands)
-
-	// Define instant register names (non-energy registers)
-	instantRegisterNames := []string{}
-	for name := range app.commands {
-		// Exclude power_reactive (virtual) and energy registers
-		if !app.isEnergyRegister(name) && !strings.HasSuffix(name, "_power_reactive") && name != "power_reactive" {
-			instantRegisterNames = append(instantRegisterNames, name)
-		}
-	}
-
-	// Define energy register suffixes
-	energyRegisterSuffixes := []string{"energy_total", "energy_imported", "energy_exported"}
-
-	// Find all energy registers from commands (handles device prefixes)
-	existingEnergyRegisters := []string{}
-	for name := range app.commands {
-		for _, suffix := range energyRegisterSuffixes {
-			if name == suffix || strings.HasSuffix(name, "_"+suffix) {
-				existingEnergyRegisters = append(existingEnergyRegisters, name)
-				break
-			}
-		}
-	}
-
-	// Create instant group if there are instant registers
-	if len(instantRegisterNames) > 0 {
-		instantGroup, err := app.groupExecutor.CreateInstantGroup(instantRegisterNames, app.config.Registers)
-		if err != nil {
-			return fmt.Errorf("error creating instant group: %w", err)
-		}
-		app.instantGroup = instantGroup
-		logger.LogInfo("✅ Instant group created with %d registers: %v", len(instantRegisterNames), instantRegisterNames)
-	}
-
-	// Create energy group if there are energy registers
-	if len(existingEnergyRegisters) > 0 {
-		energyGroup, err := app.groupExecutor.CreateEnergyGroup(existingEnergyRegisters, app.config.Registers)
-		if err != nil {
-			return fmt.Errorf("error creating energy group: %w", err)
-		}
-		app.energyGroup = energyGroup
-		logger.LogInfo("✅ Energy group created with %d registers: %v", len(existingEnergyRegisters), existingEnergyRegisters)
-	}
-
-	return nil
-}
+// Old registerCommands and initializeGroups methods removed
+// Now using registerStrategies() which calls executor.RegisterFromDevices()
 
 // Start starts the application
 func (app *Application) Start(ctx context.Context) error {
@@ -236,9 +156,8 @@ func (app *Application) Start(ctx context.Context) error {
 		}
 	}
 
-	// Start separate polling loops for different register types
+	// Start polling loop (unified for all register types)
 	go app.mainLoopNormalRegisters(ctx)
-	go app.mainLoopEnergyRegisters(ctx)
 
 	// Start heartbeat to maintain online status
 	go app.heartbeatLoop(ctx)
@@ -278,333 +197,69 @@ func (app *Application) mainLoopNormalRegisters(ctx context.Context) {
 	ticker := time.NewTicker(time.Duration(app.config.Modbus.PollInterval) * time.Millisecond)
 	defer ticker.Stop()
 
-	logger.LogDebug("🔄 Normal registers polling started (interval: %dms)", app.config.Modbus.PollInterval)
+	logger.LogDebug("🔄 Registers polling started (interval: %dms)", app.config.Modbus.PollInterval)
 
 	for {
 		select {
 		case <-ctx.Done():
-			logger.LogDebug("🔄 Normal registers polling stopped")
+			logger.LogDebug("🔄 Registers polling stopped")
 			return
 		case <-ticker.C:
-			logger.LogDebug("🔄 Normal registers tick - reading normal registers...")
-			app.readNormalRegisters(ctx)
+			logger.LogDebug("🔄 Polling tick - executing all strategies...")
+			app.executeAllStrategies(ctx)
 		}
 	}
 }
 
-// mainLoopEnergyRegisters polling loop for energy registers (kWh meters)
-func (app *Application) mainLoopEnergyRegisters(ctx context.Context) {
-	ticker := time.NewTicker(time.Duration(app.config.Modbus.EnergyDelay) * time.Millisecond)
-	defer ticker.Stop()
+// mainLoopEnergyRegisters - removed (now using unified polling)
 
-	logger.LogDebug("⚡ Energy registers polling started (interval: %dms)", app.config.Modbus.EnergyDelay)
-
-	for {
-		select {
-		case <-ctx.Done():
-			logger.LogDebug("⚡ Energy registers polling stopped")
-			return
-		case <-ticker.C:
-			logger.LogDebug("⚡ Energy registers tick - reading energy registers...")
-			app.readEnergyRegisters(ctx)
-		}
-	}
-}
-
-// isEnergyRegister checks if a register is an energy register (kWh meter)
-func (app *Application) isEnergyRegister(name string) bool {
-	// Energy register suffixes (works with or without device prefix)
-	energyRegisters := []string{"energy_total", "energy_imported", "energy_exported"}
-	for _, energyReg := range energyRegisters {
-		// Check if name ends with the energy register suffix (handles device_energy_total)
-		if name == energyReg || strings.HasSuffix(name, "_"+energyReg) {
-			return true
-		}
-	}
-	return false
-}
-
-// readNormalRegisters reads normal registers (voltage, current, power, frequency, power factor)
-func (app *Application) readNormalRegisters(ctx context.Context) {
-	logger.LogTrace("📊 Reading normal registers...")
-
-	// Use group execution if instant group is available
-	if app.instantGroup != nil {
-		logger.LogTrace("📊 Using InstantGroup for optimized batch reading")
-		results, err := app.readGroupedRegistersWithResults(ctx, app.instantGroup, "📊 Normal")
-
-		// Calculate and publish power_reactive if the command exists and we have the required values
-		if err == nil && results != nil {
-			if _, exists := app.commands["power_reactive"]; exists {
-				logger.LogTrace("📊 Calculating reactive power from instant group results")
-				app.calculateAndPublishReactivePower(ctx, results)
-			}
-		}
-	} else {
-		// Fallback to individual register reading
-		logger.LogTrace("📊 Using individual register reading (fallback)")
-		for name := range app.commands {
-			if !app.isEnergyRegister(name) {
-				logger.LogTrace("📊 Reading normal register: %s", name)
-				app.readSingleRegister(ctx, name, "📊 Normal")
-
-				// Add delay between register reads to prevent overwhelming gateway
-				time.Sleep(time.Duration(app.config.Modbus.RegisterDelay) * time.Millisecond)
-			}
-		}
-	}
-}
-
-// readEnergyRegisters reads energy registers (kWh meters)
-func (app *Application) readEnergyRegisters(ctx context.Context) {
-	logger.LogTrace("⚡ Reading energy registers...")
-
-	// Use group execution if energy group is available
-	if app.energyGroup != nil {
-		logger.LogTrace("⚡ Using EnergyGroup for optimized batch reading")
-		app.readGroupedRegisters(ctx, app.energyGroup, "⚡ Energy")
-	} else {
-		// Fallback to individual register reading
-		logger.LogTrace("⚡ Using individual register reading (fallback)")
-		for name := range app.commands {
-			if app.isEnergyRegister(name) {
-				logger.LogTrace("⚡ Reading energy register: %s", name)
-				app.readSingleRegister(ctx, name, "⚡ Energy")
-
-				// Add delay between register reads to prevent overwhelming gateway
-				time.Sleep(time.Duration(app.config.Modbus.RegisterDelay) * time.Millisecond)
-			}
-		}
-	}
-}
-
-// readGroupedRegisters reads multiple registers using a group strategy (single query)
-func (app *Application) readGroupedRegisters(ctx context.Context, group groups.GroupStrategy, logPrefix string) {
-	_, _ = app.readGroupedRegistersWithResults(ctx, group, logPrefix)
-}
-
-// readGroupedRegistersWithResults reads multiple registers using a group strategy and returns the results
-func (app *Application) readGroupedRegistersWithResults(ctx context.Context, group groups.GroupStrategy, logPrefix string) (map[string]float64, error) {
-	// Determine which group config to use
-	// For now, create a temporary RegisterGroup with the global slave_id
-	// TODO: In V2.1, this will come from app.groupConfigs
-	groupConfig := config.RegisterGroup{
-		Name:    logPrefix,
-		SlaveID: app.config.Modbus.SlaveID, // Use global slave_id for now
-	}
-
-	// If we have group configs available (V2.1), try to find the matching one
-	if app.groupConfigs != nil {
-		// Try to find by group name
-		for _, cfg := range app.groupConfigs {
-			// Match by checking if any register name matches
-			groupNames := group.GetNames()
-			if len(groupNames) > 0 {
-				// Use the first available group config
-				// TODO: Better matching logic
-				groupConfig = cfg
-				break
-			}
-		}
-	}
-
-	// Execute the grouped query
-	results, err := app.groupExecutor.ExecuteGroup(ctx, group, groupConfig)
+// executeAllStrategies executes all registered strategies and publishes results
+func (app *Application) executeAllStrategies(ctx context.Context) {
+	// Execute all strategies (groups first, then calculated)
+	results, err := app.executor.ExecuteAll(ctx)
 
 	if err != nil {
-		// Handle error for the entire group
 		app.errorReads++
 		app.handleGatewayError(ctx)
-
-		// Log the error
-		logger.LogError("❌ %s group read failed: %v", logPrefix, err)
+		logger.LogError("❌ Strategy execution error: %v", err)
 
 		// Publish diagnostic
-		errorMsg := fmt.Sprintf("%s group read error: %v", logPrefix, err)
+		errorMsg := fmt.Sprintf("Strategy execution error: %v", err)
 		if diagErr := app.publisher.PublishDiagnostic(ctx, DiagnosticModbusError, errorMsg); diagErr != nil {
 			logger.LogError("⚠️ Error publishing diagnostic: %v", diagErr)
 		}
-
-		// Fallback: try reading individual registers
-		logger.LogWarn("⚠️ Group read failed, falling back to individual register reads")
-		for _, name := range group.GetNames() {
-			app.readSingleRegister(ctx, name, logPrefix)
-			time.Sleep(time.Duration(app.config.Modbus.RegisterDelay) * time.Millisecond)
-		}
-		return nil, err
+		return
 	}
 
 	// Success - publish all results
 	app.successfulReads += len(results)
 	app.handleGatewaySuccess(ctx)
 
-	// Publish each result to Home Assistant
-	for name, value := range results {
-		command, exists := app.commands[name]
-		if !exists {
-			logger.LogError("❌ Command not found for register: %s", name)
-			continue
-		}
-
-		// Create result object
-		result := &modbus.CommandResult{
-			Name:        command.GetName(),
-			Value:       value,
-			Unit:        command.GetUnit(),
-			Topic:       command.GetTopic(),
-			DeviceClass: command.GetDeviceClass(),
-			StateClass:  command.GetStateClass(),
-		}
-
-		logger.LogTrace("📈 %s: %.3f %s", result.Name, result.Value, result.Unit)
-
-		// Publish to Home Assistant
-		if pubErr := app.publisher.PublishSensorState(ctx, result); pubErr != nil {
-			logger.LogError("⚠️ Error publishing sensor state for %s: %v", name, pubErr)
-		} else {
-			// Update last publish time for successful publications
-			app.updateLastPublishTime(name)
-		}
-	}
-
-	logger.LogDebug("✅ %s: Successfully read and published %d registers in single query", logPrefix, len(results))
-	return results, nil
-}
-
-// calculateAndPublishReactivePower calculates reactive power from group results and publishes it
-func (app *Application) calculateAndPublishReactivePower(ctx context.Context, groupResults map[string]float64) {
-	// Get the values for active and apparent power from the group results
-	activePower, hasActivePower := groupResults["power_active"]
-	apparentPower, hasApparentPower := groupResults["power_apparent"]
-
-	if !hasActivePower || !hasApparentPower {
-		logger.LogDebug("⚠️ Cannot calculate reactive power: missing power_active or power_apparent in group results")
-		return
-	}
-
-	// Calculate reactive power: Q = sqrt(S² - P²)
-	P := activePower   // Active power in W
-	S := apparentPower // Apparent power in VA
-
-	// Validation to avoid sqrt of negative number
-	var Q float64
-	if S*S < P*P {
-		// If apparent is less than active (theoretically impossible, but may occur due to measurement errors)
-		// Set Q = 0
-		Q = 0.0
-		logger.LogWarn("⚠️ Apparent power (%.2f VA) less than active power (%.2f W), setting reactive power to 0", S, P)
-	} else {
-		Q = math.Sqrt(S*S - P*P) // Reactive power in VAR
-	}
-
-	// Get the reactive power command to get metadata
-	command, exists := app.commands["power_reactive"]
-	if !exists {
-		logger.LogError("❌ Reactive power command not found")
-		return
-	}
-
-	// Create result object
-	result := &modbus.CommandResult{
-		Name:        command.GetName(),
-		Value:       Q,
-		Unit:        command.GetUnit(),
-		Topic:       command.GetTopic(),
-		DeviceClass: command.GetDeviceClass(),
-		StateClass:  command.GetStateClass(),
-	}
-
-	logger.LogTrace("📈 %s: %.3f %s (calculated from P=%.2f W, S=%.2f VA)", result.Name, result.Value, result.Unit, P, S)
-
-	// Publish to Home Assistant
-	if pubErr := app.publisher.PublishSensorState(ctx, result); pubErr != nil {
-		logger.LogError("⚠️ Error publishing reactive power: %v", pubErr)
-	} else {
-		app.updateLastPublishTime("power_reactive")
-		app.successfulReads++ // Count as a successful read
-	}
-}
-
-// readSingleRegister reads a single register and publishes to Home Assistant
-func (app *Application) readSingleRegister(ctx context.Context, name string, logPrefix string) {
-	result, err := app.executor.ExecuteCommand(ctx, name)
-
-	// Handle different error scenarios
-	if err != nil {
-		// Check if we got a cached result despite the error
-		if result != nil {
-			// We have a cached value - treat as partial success
-			app.successfulReads++
-
-			// Log the fact that we're using cached data (but not too often)
-			if app.consecutiveErrors == 0 || app.consecutiveErrors%10 == 0 {
-				logger.LogWarn("📋 %s using cached value for %s: %.3f %s (reason: %v)",
-					logPrefix, result.Name, result.Value, result.Unit, err)
-			}
-
-			// Don't increment error count as aggressively since we have data
-			// but track that there was an issue
-			app.errorReads++
-
-			// Publish the cached result to maintain sensor availability
-			if pubErr := app.publisher.PublishSensorState(ctx, result); pubErr != nil {
-				logger.LogError("⚠️ Error publishing cached sensor state: %v", pubErr)
-			}
-
-			// Publish diagnostic but with lower severity
-			errorMsg := fmt.Sprintf("Register %s using cached data: %v", name, err)
-			if ctxErr := app.publisher.PublishDiagnostic(ctx, DiagnosticModbusError, errorMsg); ctxErr != nil {
-				logger.LogError("⚠️ Error publishing diagnostic: %v", ctxErr)
-			}
-			return
-		}
-
-		// No result and no cache - this is a real failure
-		app.errorReads++
-
-		// Only log errors occasionally to avoid spam
-		if app.consecutiveErrors == 0 || app.consecutiveErrors%10 == 0 {
-			logger.LogError("❌ %s execution error %s: %v", logPrefix, name, err)
-		}
-
-		// Track consecutive errors for gateway status
-		app.handleGatewayError(ctx)
-
-		// Publish diagnostic error
-		errorMsg := fmt.Sprintf("Register %s read error: %v", name, err)
-		if ctxErr := app.publisher.PublishDiagnostic(ctx, DiagnosticModbusError, errorMsg); ctxErr != nil {
-			logger.LogError("⚠️ Error publishing diagnostic: %v", ctxErr)
-		}
-		return
-	}
-
-	// Successful read - reset error counter
-	app.handleGatewaySuccess(ctx)
-	app.successfulReads++
-
-	// Only show detailed logs every 30 seconds or for important changes
+	// Only show detailed logs every 30 seconds
 	shouldLog := time.Since(app.lastSummaryTime) >= 30*time.Second
 
 	if shouldLog {
 		logger.LogInfo("📊 Summary - Success: %d, Errors: %d, Last 30s", app.successfulReads, app.errorReads)
-		logger.LogInfo("📈 %s %s: %.3f %s", logPrefix, result.Name, result.Value, result.Unit)
 		app.lastSummaryTime = time.Now()
 		app.successfulReads = 0
 		app.errorReads = 0
 	}
 
-	// Publish state to Home Assistant
-	if err := app.publisher.PublishSensorState(ctx, result); err != nil {
-		logger.LogError("❌ %s state publication error %s: %v", logPrefix, result.Name, err)
+	// Publish each result to Home Assistant
+	for key, result := range results {
+		logger.LogTrace("� %s: %.3f %s", result.Name, result.Value, result.Unit)
 
-		// Publish diagnostic error
-		errorMsg := fmt.Sprintf("State publication error for %s: %v", result.Name, err)
-		if ctxErr := app.publisher.PublishDiagnostic(ctx, DiagnosticMQTTDisconnected, errorMsg); ctxErr != nil {
-			logger.LogError("⚠️ Error publishing diagnostic: %v", ctxErr)
+		// Publish to Home Assistant
+		if pubErr := app.publisher.PublishSensorState(ctx, result); pubErr != nil {
+			logger.LogError("⚠️ Error publishing sensor state for %s: %v", key, pubErr)
+		} else {
+			// Update last publish time for successful publications
+			app.updateLastPublishTime(key)
 		}
-	} else {
-		// Update last publish time for successful publications
-		app.updateLastPublishTime(name)
+	}
+
+	if shouldLog {
+		logger.LogDebug("✅ Successfully executed and published %d strategies", len(results))
 	}
 }
 
@@ -741,19 +396,54 @@ func (app *Application) publishDiscoveryConfigsV21(ctx context.Context) error {
 
 // publishDiscoveryConfigsLegacy publishes discoveries for V2.0/V1 configs (backward compatibility)
 func (app *Application) publishDiscoveryConfigsLegacy(ctx context.Context) error {
-	// Create mock results for discovery
+	// Get all strategies from executor to create mock results
+	allStrategies := app.executor.GetAllStrategies()
+
 	var results []*modbus.CommandResult
-	for name, command := range app.commands {
-		result := &modbus.CommandResult{
-			Strategy:    name,
-			Name:        command.GetName(),
-			Value:       0, // Mock value
-			Unit:        command.GetUnit(),
-			Topic:       command.GetTopic(),
-			DeviceClass: command.GetDeviceClass(),
-			StateClass:  command.GetStateClass(),
+	for key, strategy := range allStrategies {
+		// Check strategy type to handle different interfaces
+		switch s := strategy.(type) {
+		case *modbus.SingleRegisterStrategy:
+			register := s.GetRegisterInfo()
+			result := &modbus.CommandResult{
+				Strategy:    key,
+				Name:        register.Name,
+				Value:       0,
+				Unit:        register.Unit,
+				Topic:       register.HATopic,
+				DeviceClass: register.DeviceClass,
+				StateClass:  register.StateClass,
+			}
+			results = append(results, result)
+
+		case *modbus.CalculatedRegisterStrategy:
+			register := s.GetRegisterInfo()
+			result := &modbus.CommandResult{
+				Strategy:    key,
+				Name:        register.Name,
+				Value:       0,
+				Unit:        register.Unit,
+				Topic:       register.HATopic,
+				DeviceClass: register.DeviceClass,
+				StateClass:  register.StateClass,
+			}
+			results = append(results, result)
+
+		case *modbus.GroupRegisterStrategy:
+			// Groups contain multiple registers, extract them
+			for _, regWithKey := range s.GetRegisters() {
+				result := &modbus.CommandResult{
+					Strategy:    regWithKey.Key,
+					Name:        regWithKey.Register.Name,
+					Value:       0,
+					Unit:        regWithKey.Register.Unit,
+					Topic:       regWithKey.Register.HATopic,
+					DeviceClass: regWithKey.Register.DeviceClass,
+					StateClass:  regWithKey.Register.StateClass,
+				}
+				results = append(results, result)
+			}
 		}
-		results = append(results, result)
 	}
 
 	// Publish sensor discoveries with nil deviceInfo (uses global config)
@@ -921,8 +611,19 @@ func (app *Application) forceRepublishEnergySensors(ctx context.Context) {
 		if !exists || time.Since(lastPublish) > threshold {
 			logger.LogInfo("🔄 Force republishing %s (last published: %v)", sensorName, lastPublish.Format("15:04:05"))
 
-			// Execute the command to get current value
-			app.readSingleRegister(ctx, sensorName, "FORCED")
+			// Execute strategy to get current value
+			result, err := app.executor.GetResult(ctx, sensorName)
+			if err != nil {
+				logger.LogError("❌ Failed to force republish %s: %v", sensorName, err)
+				continue
+			}
+
+			// Publish the result
+			if pubErr := app.publisher.PublishSensorState(ctx, result); pubErr != nil {
+				logger.LogError("⚠️ Error publishing forced sensor state for %s: %v", sensorName, pubErr)
+			} else {
+				app.updateLastPublishTime(sensorName)
+			}
 		}
 	}
 }
@@ -955,21 +656,29 @@ func (app *Application) DiagnosticMode(ctx context.Context) error {
 	logger.LogInfo("✅ Gateway communication successful")
 
 	// Test 3: Modbus Device Communication
-	logger.LogInfo("🔍 Test 3: Modbus Device Communication (Slave ID: %d)", app.config.Modbus.SlaveID)
+	logger.LogInfo("🔍 Test 3: Modbus Device Communication")
 
-	// Try to read a basic register
-	result, err := app.executor.ExecuteCommand(ctx, "voltage")
-	if err != nil {
+	// Try to execute all strategies to read registers
+	results, err := app.executor.ExecuteAll(ctx)
+	if err != nil || len(results) == 0 {
 		logger.LogError("❌ Modbus device communication failed: %v", err)
 		logger.LogInfo("💡 Possible issues:")
 		logger.LogInfo("   - Modbus device is not connected to USR-DR164 gateway")
-		logger.LogInfo("   - Wrong slave ID (%d)", app.config.Modbus.SlaveID)
+		logger.LogInfo("   - Wrong slave ID in device configuration")
 		logger.LogInfo("   - Modbus device is not powered on")
 		logger.LogInfo("   - Physical connection issues (RS485 wiring)")
 		logger.LogInfo("   - Wrong baud rate or communication parameters")
-		return fmt.Errorf("modbus device communication failed: %w", err)
+		if err != nil {
+			return fmt.Errorf("modbus device communication failed: %w", err)
+		}
+		return fmt.Errorf("modbus device communication failed: no results")
 	}
-	logger.LogInfo("✅ Modbus device communication successful - Voltage: %.2f V", result.Value)
+
+	// Log first result as example
+	for _, result := range results {
+		logger.LogInfo("✅ Modbus device communication successful - %s: %.2f %s", result.Name, result.Value, result.Unit)
+		break // Just show one example
+	}
 
 	logger.LogInfo("🎉 All diagnostic tests passed!")
 	return nil

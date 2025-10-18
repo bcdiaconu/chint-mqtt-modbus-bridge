@@ -846,3 +846,161 @@ func containsSubstringHelper(s, substr string) bool {
 	}
 	return false
 }
+
+// Helper function to create a basic valid device for testing calculated values
+func createTestDevice(registers []config.GroupRegister, calculatedValues []config.CalculatedValue) config.Device {
+	return config.Device{
+		Metadata: config.DeviceMetadata{
+			Name:    "Test Device",
+			Enabled: true,
+		},
+		RTU: config.RTUConfig{
+			SlaveID: 1,
+		},
+		Modbus: config.ModbusDeviceConfig{
+			RegisterGroups: map[string]config.RegisterGroup{
+				"instant": {
+					Name:          "Instant",
+					FunctionCode:  0x03,
+					StartAddress:  0x2000,
+					RegisterCount: uint16(len(registers) * 2), // 2 registers per value (float32)
+					Registers:     registers,
+				},
+			},
+		},
+		CalculatedValues: calculatedValues,
+	}
+}
+
+func TestDeviceValidate_CalculatedValues(t *testing.T) {
+	tests := []struct {
+		name          string
+		device        config.Device
+		wantError     bool
+		errorContains string
+	}{
+		{
+			name: "Valid calculated value",
+			device: createTestDevice(
+				[]config.GroupRegister{
+					{Key: "power_active", Offset: 0},
+					{Key: "power_reactive", Offset: 4},
+				},
+				[]config.CalculatedValue{
+					{
+						Key:     "power_apparent",
+						Formula: "sqrt(power_active^2 + power_reactive^2)",
+					},
+				},
+			),
+			wantError: false,
+		},
+		{
+			name: "Calculated value with missing variable",
+			device: createTestDevice(
+				[]config.GroupRegister{
+					{Key: "power_active", Offset: 0},
+				},
+				[]config.CalculatedValue{
+					{
+						Key:     "power_apparent",
+						Formula: "sqrt(power_active^2 + power_reactive^2)",
+					},
+				},
+			),
+			wantError:     true,
+			errorContains: "references unknown register 'power_reactive'",
+		},
+		{
+			name: "Calculated value with duplicate key",
+			device: createTestDevice(
+				[]config.GroupRegister{
+					{Key: "power_active", Offset: 0},
+					{Key: "power_apparent", Offset: 4},
+				},
+				[]config.CalculatedValue{
+					{
+						Key:     "power_apparent", // Duplicate!
+						Formula: "sqrt(power_active^2 + power_reactive^2)",
+					},
+				},
+			),
+			wantError:     true,
+			errorContains: "conflicts with register",
+		},
+		{
+			name: "Calculated value with empty formula",
+			device: createTestDevice(
+				[]config.GroupRegister{
+					{Key: "power_active", Offset: 0},
+				},
+				[]config.CalculatedValue{
+					{
+						Key:     "power_apparent",
+						Formula: "",
+					},
+				},
+			),
+			wantError:     true,
+			errorContains: "has no formula",
+		},
+		{
+			name: "Calculated value with invalid formula syntax",
+			device: createTestDevice(
+				[]config.GroupRegister{
+					{Key: "power_active", Offset: 0},
+				},
+				[]config.CalculatedValue{
+					{
+						Key:     "power_apparent",
+						Formula: "sqrt(power_active",
+					},
+				},
+			),
+			wantError:     true,
+			errorContains: "invalid formula",
+		},
+		{
+			name: "Multiple calculated values - all valid",
+			device: createTestDevice(
+				[]config.GroupRegister{
+					{Key: "voltage", Offset: 0},
+					{Key: "current", Offset: 4},
+					{Key: "power_active", Offset: 8},
+				},
+				[]config.CalculatedValue{
+					{
+						Key:     "power_apparent",
+						Formula: "voltage * current",
+					},
+					{
+						Key:     "power_factor",
+						Formula: "power_active / power_apparent",
+					},
+				},
+			),
+			wantError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.device.Validate()
+
+			if tt.wantError {
+				if err == nil {
+					t.Errorf("Device.Validate() expected error but got none")
+					return
+				}
+				if tt.errorContains != "" && !containsSubstring(err.Error(), tt.errorContains) {
+					t.Errorf("Device.Validate() error = %v, want error containing %q", err, tt.errorContains)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Device.Validate() unexpected error = %v", err)
+			}
+		})
+	}
+}

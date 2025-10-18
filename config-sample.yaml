@@ -93,13 +93,6 @@ devices:
               min: 0.0
               max: 100000.0
 
-            - key: "power_reactive"
-              name: "Reactive Power"
-              offset: 0
-              unit: "var"
-              device_class: "reactive_power"
-              state_class: "measurement"
-
             - key: "power_factor"
               name: "Power Factor"
               offset: 48
@@ -148,6 +141,16 @@ devices:
               device_class: "energy"
               state_class: "total_increasing"
               max_kwh_per_hour: 3.0
+
+    # Calculated values - computed after all Modbus reads complete
+    calculated_values:
+      - key: "power_reactive"
+        name: "Reactive Power"
+        unit: "var"
+        formula: "sqrt(power_apparent^2 - power_active^2)"
+        scale_factor: 1000
+        device_class: "reactive_power"
+        state_class: "measurement"
 
   # CHINT DDSU666 Single-Phase Energy Meter (Simplified Model)
   # See docs/DDSU666.md for detailed documentation
@@ -248,12 +251,21 @@ devices:
               max_kwh_per_hour: 20.0
 
             - key: "energy_exported"
-              name: "Reverse Active Energy"
+              name: "Exported Energy (Reverse)"
               offset: 20
               unit: "kWh"
               device_class: "energy"
               state_class: "total_increasing"
               max_kwh_per_hour: 3.0
+
+    # Calculated values - computed after all Modbus reads complete
+    calculated_values:
+      - key: "power_apparent"
+        name: "Apparent Power"
+        unit: "VA"
+        formula: "sqrt(power_active^2 + power_reactive^2)"
+        device_class: "apparent_power"
+        state_class: "measurement"
 
   # Example: Growatt Solar Inverter
   # Demonstrates configuration for different device types

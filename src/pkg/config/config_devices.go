@@ -8,10 +8,11 @@ import (
 // Device represents a Modbus device on the RTU bus (Version 2.1+)
 // Organized into 4 sections: metadata, rtu, modbus, homeassistant
 type Device struct {
-	Metadata      DeviceMetadata     `yaml:"metadata"`                // Device metadata (name, manufacturer, model)
-	RTU           RTUConfig          `yaml:"rtu"`                     // RTU/Physical layer configuration
-	Modbus        ModbusDeviceConfig `yaml:"modbus"`                  // Modbus protocol layer
-	HomeAssistant *HADeviceConfig    `yaml:"homeassistant,omitempty"` // Home Assistant integration (optional)
+	Metadata         DeviceMetadata     `yaml:"metadata"`                    // Device metadata (name, manufacturer, model)
+	RTU              RTUConfig          `yaml:"rtu"`                         // RTU/Physical layer configuration
+	Modbus           ModbusDeviceConfig `yaml:"modbus"`                      // Modbus protocol layer
+	HomeAssistant    *HADeviceConfig    `yaml:"homeassistant,omitempty"`     // Home Assistant integration (optional)
+	CalculatedValues []CalculatedValue  `yaml:"calculated_values,omitempty"` // Calculated/derived values
 }
 
 // DeviceMetadata contains device identification and metadata
@@ -39,6 +40,20 @@ type HADeviceConfig struct {
 	DeviceID     string `yaml:"device_id,omitempty"`    // Unique ID in HA (defaults to device key)
 	Manufacturer string `yaml:"manufacturer,omitempty"` // HA manufacturer override (defaults to metadata.manufacturer)
 	Model        string `yaml:"model,omitempty"`        // HA model override (defaults to metadata.model)
+}
+
+// CalculatedValue represents a value computed from other registers
+// Calculated values are executed AFTER all Modbus reads complete
+type CalculatedValue struct {
+	Key         string   `yaml:"key"`                    // Unique key for this calculated value
+	Name        string   `yaml:"name"`                   // Display name
+	Unit        string   `yaml:"unit"`                   // Unit of measurement
+	Formula     string   `yaml:"formula"`                // Mathematical expression
+	ScaleFactor float64  `yaml:"scale_factor,omitempty"` // Multiplier applied to result (default: 1.0)
+	DeviceClass string   `yaml:"device_class"`           // Home Assistant device class
+	StateClass  string   `yaml:"state_class"`            // Home Assistant state class
+	Min         *float64 `yaml:"min,omitempty"`          // Minimum valid value
+	Max         *float64 `yaml:"max,omitempty"`          // Maximum valid value
 }
 
 // GetName returns the device name from metadata
@@ -187,6 +202,42 @@ func (d *Device) Validate() error {
 			}
 			usedRegisterKeys[reg.Key] = groupName
 		}
+	}
+
+	// Validate calculated values
+	for i, calc := range d.CalculatedValues {
+		// Validate key
+		if calc.Key == "" {
+			return fmt.Errorf("device '%s': calculated_values[%d] key cannot be empty", d.Metadata.Name, i)
+		}
+
+		// Check for duplicate keys (calculated value vs register keys)
+		if existingGroup, exists := usedRegisterKeys[calc.Key]; exists {
+			return fmt.Errorf("device '%s': calculated value key '%s' conflicts with register in group '%s'",
+				d.Metadata.Name, calc.Key, existingGroup)
+		}
+
+		// Validate formula
+		if calc.Formula == "" {
+			return fmt.Errorf("device '%s': calculated value '%s' has no formula", d.Metadata.Name, calc.Key)
+		}
+
+		// Validate formula syntax and extract variables
+		variables, err := ValidateFormula(calc.Formula)
+		if err != nil {
+			return fmt.Errorf("device '%s': calculated value '%s' has invalid formula: %w", d.Metadata.Name, calc.Key, err)
+		}
+
+		// Validate that all variables exist in this device's registers
+		for _, varName := range variables {
+			if _, exists := usedRegisterKeys[varName]; !exists {
+				return fmt.Errorf("device '%s': calculated value '%s' references unknown register '%s' in formula",
+					d.Metadata.Name, calc.Key, varName)
+			}
+		}
+
+		// Mark this calculated value key as used
+		usedRegisterKeys[calc.Key] = "calculated_values"
 	}
 
 	return nil
@@ -356,6 +407,8 @@ func GetAllRegistersFromDevices(devices map[string]Device) map[string]Register {
 					Address:       address,
 					Unit:          reg.Unit,
 					ScaleFactor:   scaleFactor,
+					Formula:       reg.Formula,
+					DependsOn:     reg.DependsOn,
 					DeviceClass:   reg.DeviceClass,
 					StateClass:    reg.StateClass,
 					HATopic:       haTopic,
@@ -367,6 +420,47 @@ func GetAllRegistersFromDevices(devices map[string]Device) map[string]Register {
 				logger.LogDebug("Converted device '%s' register '%s' -> '%s' (address: 0x%04X, topic: %s)",
 					deviceKey, reg.Key, uniqueKey, address, haTopic)
 			}
+		}
+
+		// Process calculated values for this device
+		for _, calc := range device.CalculatedValues {
+			// Construct HATopic
+			haTopic := ConstructHATopic(haDeviceID, calc.Key, calc.DeviceClass)
+
+			// Create pointers for optional fields
+			var minPtr, maxPtr *float64
+			if calc.Min != nil {
+				minPtr = calc.Min
+			}
+			if calc.Max != nil {
+				maxPtr = calc.Max
+			}
+
+			// Default scale_factor to 1.0 if not specified
+			scaleFactor := calc.ScaleFactor
+			if scaleFactor == 0 {
+				scaleFactor = 1.0
+			}
+
+			// Create unique key: deviceKey_registerKey
+			uniqueKey := fmt.Sprintf("%s_%s", deviceKey, calc.Key)
+
+			registers[uniqueKey] = Register{
+				Name:        calc.Name,
+				Address:     0, // Calculated values have no Modbus address
+				Unit:        calc.Unit,
+				ScaleFactor: scaleFactor,
+				Formula:     calc.Formula,
+				DependsOn:   []string{}, // Will be extracted from formula
+				DeviceClass: calc.DeviceClass,
+				StateClass:  calc.StateClass,
+				HATopic:     haTopic,
+				Min:         minPtr,
+				Max:         maxPtr,
+			}
+
+			logger.LogDebug("Converted device '%s' calculated value '%s' -> '%s' (formula: %s, topic: %s)",
+				deviceKey, calc.Key, uniqueKey, calc.Formula, haTopic)
 		}
 	}
 

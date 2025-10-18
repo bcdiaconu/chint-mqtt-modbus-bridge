@@ -1,5 +1,7 @@
 package modbus
 
+import "time"
+
 // CommandResult result of executing a command
 type CommandResult struct {
 	Strategy    string  `json:"strategy"`
@@ -10,6 +12,12 @@ type CommandResult struct {
 	DeviceClass string  `json:"device_class"`
 	StateClass  string  `json:"state_class"`
 	RawData     []byte  `json:"raw_data"`
+}
+
+// CachedResult stores a command result with timestamp for cache validation
+type CachedResult struct {
+	Result    *CommandResult
+	Timestamp time.Time
 }
 
 // CommandError custom error for commands
