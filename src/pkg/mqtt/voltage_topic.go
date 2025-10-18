@@ -32,8 +32,8 @@ func (v *VoltageTopic) PublishDiscovery(ctx context.Context, client mqtt.Client,
 		return fmt.Errorf("client is not connected")
 	}
 
-	// Extract sensor name from topic
-	sensorName := extractSensorName(result.Topic)
+	// Use explicit sensor key from result
+	sensorKey := result.SensorKey
 
 	// Use device info if provided, otherwise fall back to deprecated global config
 	var device DeviceInfo
@@ -50,8 +50,8 @@ func (v *VoltageTopic) PublishDiscovery(ctx context.Context, client mqtt.Client,
 
 	// Build topics using factory
 	deviceID := ExtractDeviceID(&device)
-	discoveryTopic := v.factory.BuildDiscoveryTopic(deviceID, sensorName)
-	uniqueID := v.factory.BuildUniqueID(deviceID, sensorName)
+	discoveryTopic := v.factory.BuildDiscoveryTopic(deviceID, sensorKey)
+	uniqueID := v.factory.BuildUniqueID(deviceID, sensorKey)
 
 	// Configuration for the voltage sensor
 	config := SensorConfig{

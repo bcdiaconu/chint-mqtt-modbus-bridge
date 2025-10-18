@@ -246,7 +246,7 @@ func (c *Config) Validate() error {
 
 			// Convert devices to flat groups for backward compatibility
 			if len(c.RegisterGroups) == 0 {
-				c.RegisterGroups = ConvertDevicesToGroups(c.Devices)
+				c.RegisterGroups = ConvertDevicesToGroups(c.Devices, c.HomeAssistant.DiscoveryPrefix)
 				logger.LogInfo("✅ Converted %d devices to %d register groups",
 					len(c.Devices), len(c.RegisterGroups))
 			}
@@ -264,7 +264,7 @@ func (c *Config) Validate() error {
 		if len(c.Registers) == 0 {
 			// For V2.1 with devices, use device-aware conversion that creates unique keys
 			if len(c.Devices) > 0 {
-				c.Registers = GetAllRegistersFromDevices(c.Devices)
+				c.Registers = GetAllRegistersFromDevices(c.Devices, c.HomeAssistant.DiscoveryPrefix)
 				logger.LogInfo("✅ Converted %d devices to %d individual registers with unique keys",
 					len(c.Devices), len(c.Registers))
 			} else {

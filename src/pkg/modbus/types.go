@@ -8,7 +8,8 @@ type CommandResult struct {
 	Name        string  `json:"name"`
 	Value       float64 `json:"value"`
 	Unit        string  `json:"unit"`
-	Topic       string  `json:"topic"`
+	Topic       string  `json:"topic"`      // Full state topic path
+	SensorKey   string  `json:"sensor_key"` // Sensor key for building discovery topics
 	DeviceClass string  `json:"device_class"`
 	StateClass  string  `json:"state_class"`
 	RawData     []byte  `json:"raw_data"`

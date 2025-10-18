@@ -53,6 +53,7 @@ func (d *DiagnosticTopic) PublishDiscovery(ctx context.Context, client mqtt.Clie
 
 	// Build topics using factory
 	deviceID := ExtractDeviceID(&device)
+	logger.LogDebug("🔍 Extracted device ID for diagnostic: '%s' (len=%d)", deviceID, len(deviceID))
 	discoveryTopic := d.factory.BuildDiagnosticDiscoveryTopic(deviceID)
 	stateTopic := d.factory.BuildDiagnosticStateTopic(deviceID)
 	uniqueID := d.factory.BuildDiagnosticUniqueID(deviceID)

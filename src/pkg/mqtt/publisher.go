@@ -262,23 +262,3 @@ type SensorState struct {
 	Unit      string    `json:"unit"`
 	Timestamp time.Time `json:"timestamp"`
 }
-
-// extractSensorName extracts the sensor name from the topic
-func extractSensorName(topic string) string {
-	// Extract the last part from the topic
-	// E.g.: "sensor/energy_meter/voltage" -> "voltage"
-	parts := []rune(topic)
-	lastSlash := -1
-	for i := len(parts) - 1; i >= 0; i-- {
-		if parts[i] == '/' {
-			lastSlash = i
-			break
-		}
-	}
-
-	if lastSlash != -1 && lastSlash < len(parts)-1 {
-		return string(parts[lastSlash+1:])
-	}
-
-	return topic
-}

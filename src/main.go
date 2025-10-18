@@ -8,6 +8,7 @@ import (
 	"mqtt-modbus-bridge/pkg/logger"
 	"mqtt-modbus-bridge/pkg/modbus"
 	"mqtt-modbus-bridge/pkg/mqtt"
+	"mqtt-modbus-bridge/pkg/topics"
 	"os"
 	"os/signal"
 	"sync"
@@ -69,8 +70,8 @@ func NewApplication(configPath string) (*Application, error) {
 	// Create gateway
 	gatewayInstance := gateway.NewUSRGateway(&cfg.MQTT)
 
-	// Create strategy executor
-	executor := modbus.NewStrategyExecutor(gatewayInstance)
+	// Create strategy executor with discovery prefix
+	executor := modbus.NewStrategyExecutor(gatewayInstance, cfg.HomeAssistant.DiscoveryPrefix)
 
 	// Create publisher for Home Assistant
 	publisher := mqtt.NewPublisher(&cfg.MQTT, &cfg.HomeAssistant)
@@ -360,8 +361,8 @@ func (app *Application) publishDiscoveryConfigsV21(ctx context.Context) error {
 		var deviceResults []*modbus.CommandResult
 		for _, group := range device.Modbus.RegisterGroups {
 			for _, register := range group.Registers {
-				// Construct the full HA topic path automatically
-				topic := config.ConstructHATopic(haDeviceID, register.Key, register.DeviceClass)
+				// Construct the full HA topic path automatically with discovery prefix
+				topic := topics.ConstructHATopic(app.config.HomeAssistant.DiscoveryPrefix, haDeviceID, register.Key, register.DeviceClass)
 
 				result := &modbus.CommandResult{
 					Strategy:    register.Key,
@@ -369,6 +370,7 @@ func (app *Application) publishDiscoveryConfigsV21(ctx context.Context) error {
 					Value:       0, // Mock value
 					Unit:        register.Unit,
 					Topic:       topic,
+					SensorKey:   register.Key, // Just the sensor key, not device_id_sensor_key
 					DeviceClass: register.DeviceClass,
 					StateClass:  register.StateClass,
 				}
@@ -411,6 +413,7 @@ func (app *Application) publishDiscoveryConfigsLegacy(ctx context.Context) error
 				Value:       0,
 				Unit:        register.Unit,
 				Topic:       register.HATopic,
+				SensorKey:   key,
 				DeviceClass: register.DeviceClass,
 				StateClass:  register.StateClass,
 			}
@@ -424,6 +427,7 @@ func (app *Application) publishDiscoveryConfigsLegacy(ctx context.Context) error
 				Value:       0,
 				Unit:        register.Unit,
 				Topic:       register.HATopic,
+				SensorKey:   key,
 				DeviceClass: register.DeviceClass,
 				StateClass:  register.StateClass,
 			}
@@ -438,6 +442,7 @@ func (app *Application) publishDiscoveryConfigsLegacy(ctx context.Context) error
 					Value:       0,
 					Unit:        regWithKey.Register.Unit,
 					Topic:       regWithKey.Register.HATopic,
+					SensorKey:   regWithKey.Key,
 					DeviceClass: regWithKey.Register.DeviceClass,
 					StateClass:  regWithKey.Register.StateClass,
 				}

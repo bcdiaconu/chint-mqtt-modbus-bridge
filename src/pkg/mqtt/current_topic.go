@@ -32,8 +32,8 @@ func (c *CurrentTopic) PublishDiscovery(ctx context.Context, client mqtt.Client,
 		return fmt.Errorf("client is not connected")
 	}
 
-	// Extract sensor name from topic
-	sensorName := extractSensorName(result.Topic)
+	// Use explicit sensor key from result
+	sensorKey := result.SensorKey
 
 	// Use device info if provided, otherwise fall back to deprecated global config
 	var device DeviceInfo
@@ -50,8 +50,8 @@ func (c *CurrentTopic) PublishDiscovery(ctx context.Context, client mqtt.Client,
 
 	// Build topics using factory
 	deviceID := ExtractDeviceID(&device)
-	discoveryTopic := c.factory.BuildDiscoveryTopic(deviceID, sensorName)
-	uniqueID := c.factory.BuildUniqueID(deviceID, sensorName)
+	discoveryTopic := c.factory.BuildDiscoveryTopic(deviceID, sensorKey)
+	uniqueID := c.factory.BuildUniqueID(deviceID, sensorKey)
 
 	// Configuration for the current sensor
 	config := SensorConfig{
@@ -94,7 +94,7 @@ func (c *CurrentTopic) PublishState(ctx context.Context, client mqtt.Client, res
 		return fmt.Errorf("invalid current data: %w", err)
 	}
 
-	// State topic (result.Topic already includes /state suffix)
+	// State topic
 	stateTopic := result.Topic
 
 	// Current sensor data

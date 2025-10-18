@@ -61,6 +61,7 @@ func (s *SingleRegisterStrategy) Execute(ctx context.Context) (*CommandResult, e
 		Value:       value,
 		Unit:        s.register.Unit,
 		Topic:       s.register.HATopic,
+		SensorKey:   s.key, // Use the full key as sensor key
 		DeviceClass: s.register.DeviceClass,
 		StateClass:  s.register.StateClass,
 		RawData:     data,

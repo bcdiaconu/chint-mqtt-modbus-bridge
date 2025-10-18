@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"mqtt-modbus-bridge/pkg/logger"
+	"mqtt-modbus-bridge/pkg/topics"
 )
 
 // Device represents a Modbus device on the RTU bus (Version 2.1+)
@@ -117,36 +118,6 @@ func (d *Device) GetHADeviceID(deviceKey string) string {
 		return d.HomeAssistant.DeviceID
 	}
 	return deviceKey
-}
-
-// ConstructHATopic builds the complete Home Assistant MQTT topic path.
-// Format: <component>/<device_id>/<object_id>
-// - component: "sensor" or "binary_sensor" (determined from device_class)
-// - device_id: Home Assistant device identifier
-// - object_id: Unique object ID for this entity (typically the register key)
-func ConstructHATopic(deviceHAID, registerKey, deviceClass string) string {
-	// Determine component type from device_class
-	// Binary sensors typically have device classes like: door, window, motion, etc.
-	// Most energy meter readings are regular sensors
-	component := "sensor" // Default to sensor
-
-	// Binary sensor device classes (add more as needed)
-	binarySensorClasses := map[string]bool{
-		"door":      true,
-		"window":    true,
-		"motion":    true,
-		"opening":   true,
-		"occupancy": true,
-		"presence":  true,
-		"running":   true,
-		"problem":   true,
-	}
-
-	if binarySensorClasses[deviceClass] {
-		component = "binary_sensor"
-	}
-
-	return fmt.Sprintf("%s/%s/%s", component, deviceHAID, registerKey)
 }
 
 // Validate validates the device configuration
@@ -289,7 +260,7 @@ func ValidateDevices(devices map[string]Device) error {
 }
 
 // ConvertDevicesToGroups converts device-based config (V2.1) to flat groups (V2.0) for backward compatibility
-func ConvertDevicesToGroups(devices map[string]Device) map[string]RegisterGroup {
+func ConvertDevicesToGroups(devices map[string]Device, discoveryPrefix string) map[string]RegisterGroup {
 	groups := make(map[string]RegisterGroup)
 
 	for deviceKey, device := range devices {
@@ -318,8 +289,8 @@ func ConvertDevicesToGroups(devices map[string]Device) map[string]RegisterGroup 
 			// Construct HATopic for each register if not provided
 			for i := range group.Registers {
 				if group.Registers[i].HATopic == "" {
-					// Auto-construct topic: sensor/<device_ha_id>/<register_key>
-					group.Registers[i].HATopic = ConstructHATopic(haDeviceID, group.Registers[i].Key, group.Registers[i].DeviceClass)
+					// Auto-construct topic with discovery prefix
+					group.Registers[i].HATopic = topics.ConstructHATopic(discoveryPrefix, haDeviceID, group.Registers[i].Key, group.Registers[i].DeviceClass)
 					logger.LogDebug("Auto-constructed topic for %s/%s: %s",
 						deviceKey, group.Registers[i].Key, group.Registers[i].HATopic)
 				}
@@ -337,7 +308,7 @@ func ConvertDevicesToGroups(devices map[string]Device) map[string]RegisterGroup 
 
 // GetAllRegisters extracts all registers from all devices for backward compatibility
 // Creates unique keys by combining device key with register key (deviceKey_registerKey)
-func GetAllRegistersFromDevices(devices map[string]Device) map[string]Register {
+func GetAllRegistersFromDevices(devices map[string]Device, discoveryPrefix string) map[string]Register {
 	registers := make(map[string]Register)
 
 	for deviceKey, device := range devices {
@@ -378,7 +349,7 @@ func GetAllRegistersFromDevices(devices map[string]Device) map[string]Register {
 				// Construct HATopic if not provided
 				haTopic := reg.HATopic
 				if haTopic == "" {
-					haTopic = ConstructHATopic(haDeviceID, reg.Key, reg.DeviceClass)
+					haTopic = topics.ConstructHATopic(discoveryPrefix, haDeviceID, reg.Key, reg.DeviceClass)
 				}
 
 				// Create pointers for optional fields (only if non-zero)
@@ -425,8 +396,8 @@ func GetAllRegistersFromDevices(devices map[string]Device) map[string]Register {
 
 		// Process calculated values for this device
 		for _, calc := range device.CalculatedValues {
-			// Construct HATopic
-			haTopic := ConstructHATopic(haDeviceID, calc.Key, calc.DeviceClass)
+			// Construct HATopic with discovery prefix
+			haTopic := topics.ConstructHATopic(discoveryPrefix, haDeviceID, calc.Key, calc.DeviceClass)
 
 			// Create pointers for optional fields
 			var minPtr, maxPtr *float64

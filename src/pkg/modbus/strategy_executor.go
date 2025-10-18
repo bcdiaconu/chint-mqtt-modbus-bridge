@@ -14,6 +14,7 @@ import (
 type StrategyExecutor struct {
 	gateway          gateway.Gateway
 	cache            *ValueCache
+	discoveryPrefix  string // Home Assistant discovery prefix
 	singleStrategies map[string]*SingleRegisterStrategy
 	groupStrategies  map[string]*GroupRegisterStrategy
 	calcStrategies   map[string]*CalculatedRegisterStrategy
@@ -21,10 +22,11 @@ type StrategyExecutor struct {
 }
 
 // NewStrategyExecutor creates a new strategy executor
-func NewStrategyExecutor(gw gateway.Gateway) *StrategyExecutor {
+func NewStrategyExecutor(gw gateway.Gateway, discoveryPrefix string) *StrategyExecutor {
 	return &StrategyExecutor{
 		gateway:          gw,
 		cache:            NewValueCache(5 * time.Minute),
+		discoveryPrefix:  discoveryPrefix,
 		singleStrategies: make(map[string]*SingleRegisterStrategy),
 		groupStrategies:  make(map[string]*GroupRegisterStrategy),
 		calcStrategies:   make(map[string]*CalculatedRegisterStrategy),
@@ -69,7 +71,7 @@ func (e *StrategyExecutor) RegisterFromDevices(devices map[string]config.Device)
 					ApplyAbs:    groupReg.ApplyAbs, // Copy apply_abs flag
 					DeviceClass: groupReg.DeviceClass,
 					StateClass:  groupReg.StateClass,
-					HATopic:     topics.ConstructHATopic(deviceKey, groupReg.Key, groupReg.DeviceClass),
+					HATopic:     topics.ConstructHATopic(e.discoveryPrefix, deviceKey, groupReg.Key, groupReg.DeviceClass),
 				}
 
 				regKey := fmt.Sprintf("%s_%s", deviceKey, groupReg.Key)
@@ -110,7 +112,7 @@ func (e *StrategyExecutor) RegisterFromDevices(devices map[string]config.Device)
 				ScaleFactor: scaleFactor,
 				DeviceClass: calc.DeviceClass,
 				StateClass:  calc.StateClass,
-				HATopic:     topics.ConstructHATopic(deviceKey, calc.Key, calc.DeviceClass),
+				HATopic:     topics.ConstructHATopic(e.discoveryPrefix, deviceKey, calc.Key, calc.DeviceClass),
 			}
 
 			calcKey := fmt.Sprintf("%s_%s", deviceKey, calc.Key)

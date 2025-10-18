@@ -7,7 +7,34 @@ import (
 	"math"
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/gateway"
+	"strings"
 )
+
+// extractSensorKey extracts the sensor key from a full key (device_key_sensor_key)
+// Example: "energy_meter_lights_power_active" -> "power_active"
+func extractSensorKey(fullKey string) string {
+	// Find the last underscore followed by a known sensor type
+	// Common sensor keys: voltage, current, power_active, power_reactive, etc.
+	parts := strings.Split(fullKey, "_")
+	if len(parts) >= 2 {
+		// Take the last 2 parts for compound keys like "power_active"
+		// or just last part for simple keys like "voltage"
+		if len(parts) >= 3 {
+			// Check if last 2 parts form a known compound key
+			lastTwo := strings.Join(parts[len(parts)-2:], "_")
+			knownKeys := []string{"power_active", "power_reactive", "power_apparent", "power_factor",
+				"energy_total", "energy_imported", "energy_exported"}
+			for _, known := range knownKeys {
+				if lastTwo == known {
+					return lastTwo
+				}
+			}
+		}
+		// Otherwise return just the last part
+		return parts[len(parts)-1]
+	}
+	return fullKey
+}
 
 // GroupRegisterStrategy reads multiple contiguous registers as a group
 type GroupRegisterStrategy struct {
@@ -98,6 +125,9 @@ func (s *GroupRegisterStrategy) Execute(ctx context.Context) (map[string]*Comman
 			value = math.Abs(value)
 		}
 
+		// Extract just the sensor key from the full key (device_key_sensor_key)
+		sensorKey := extractSensorKey(regWithKey.Key)
+
 		// Create result
 		result := &CommandResult{
 			Strategy:    "group_register",
@@ -105,6 +135,7 @@ func (s *GroupRegisterStrategy) Execute(ctx context.Context) (map[string]*Comman
 			Value:       value,
 			Unit:        reg.Unit,
 			Topic:       reg.HATopic,
+			SensorKey:   sensorKey,
 			DeviceClass: reg.DeviceClass,
 			StateClass:  reg.StateClass,
 			RawData:     registerData,

@@ -32,8 +32,8 @@ func (f *FrequencyTopic) PublishDiscovery(ctx context.Context, client mqtt.Clien
 		return fmt.Errorf("client is not connected")
 	}
 
-	// Extract sensor name from topic
-	sensorName := extractSensorName(result.Topic)
+	// Use explicit sensor key from result
+	sensorKey := result.SensorKey
 
 	// Use device info if provided, otherwise fall back to deprecated global config
 	var device DeviceInfo
@@ -50,14 +50,14 @@ func (f *FrequencyTopic) PublishDiscovery(ctx context.Context, client mqtt.Clien
 
 	// Build topics using factory
 	deviceID := ExtractDeviceID(&device)
-	discoveryTopic := f.factory.BuildDiscoveryTopic(deviceID, sensorName)
-	uniqueID := f.factory.BuildUniqueID(deviceID, sensorName)
+	discoveryTopic := f.factory.BuildDiscoveryTopic(deviceID, sensorKey)
+	uniqueID := f.factory.BuildUniqueID(deviceID, sensorKey)
 
 	// Configuration for the frequency sensor
 	config := SensorConfig{
 		Name:                result.Name,
 		UniqueID:            uniqueID,
-		StateTopic:          result.Topic, // result.Topic already includes /state suffix
+		StateTopic:          result.Topic,
 		UnitOfMeasurement:   result.Unit,
 		DeviceClass:         result.DeviceClass,
 		StateClass:          result.StateClass,
@@ -94,7 +94,7 @@ func (f *FrequencyTopic) PublishState(ctx context.Context, client mqtt.Client, r
 		return fmt.Errorf("invalid frequency data: %w", err)
 	}
 
-	// State topic (result.Topic already includes /state suffix)
+	// State topic
 	stateTopic := result.Topic
 
 	// Frequency sensor data

@@ -6,7 +6,26 @@ import (
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/logger"
 	"regexp"
+	"strings"
 )
+
+// extractSensorKeyCalc extracts the sensor key from a full key for calculated values
+func extractSensorKeyCalc(fullKey string) string {
+	parts := strings.Split(fullKey, "_")
+	if len(parts) >= 2 {
+		if len(parts) >= 3 {
+			lastTwo := strings.Join(parts[len(parts)-2:], "_")
+			knownKeys := []string{"power_active", "power_reactive", "power_apparent", "power_factor"}
+			for _, known := range knownKeys {
+				if lastTwo == known {
+					return lastTwo
+				}
+			}
+		}
+		return parts[len(parts)-1]
+	}
+	return fullKey
+}
 
 // CalculatedRegisterStrategy evaluates a formula using cached register values
 type CalculatedRegisterStrategy struct {
@@ -85,6 +104,7 @@ func (s *CalculatedRegisterStrategy) Execute(ctx context.Context) (*CommandResul
 		Value:       value,
 		Unit:        s.register.Unit,
 		Topic:       s.register.HATopic,
+		SensorKey:   extractSensorKeyCalc(s.key), // Extract just the sensor key
 		DeviceClass: s.register.DeviceClass,
 		StateClass:  s.register.StateClass,
 		RawData:     nil, // Calculated values have no raw data

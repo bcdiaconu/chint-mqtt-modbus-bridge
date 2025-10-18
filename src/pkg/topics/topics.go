@@ -2,11 +2,11 @@ package topics
 
 import "fmt"
 
-// ConstructHATopic builds Home Assistant MQTT state topic
+// ConstructHATopic builds Home Assistant MQTT state topic with configurable prefix
 // This is a standalone function to avoid import cycles between mqtt and modbus packages
-// Pattern: homeassistant/sensor/{device_id}/{device_id}_{sensor_key}/state
-func ConstructHATopic(deviceID, sensorKey, deviceClass string) string {
-	return fmt.Sprintf("homeassistant/sensor/%s/%s_%s/state", deviceID, deviceID, sensorKey)
+// Pattern: {prefix}/sensor/{device_id}/{device_id}_{sensor_key}/state
+func ConstructHATopic(prefix, deviceID, sensorKey, deviceClass string) string {
+	return fmt.Sprintf("%s/sensor/%s/%s_%s/state", prefix, deviceID, deviceID, sensorKey)
 }
 
 // BuildDiscoveryTopic constructs the discovery config topic for a sensor
@@ -18,7 +18,7 @@ func BuildDiscoveryTopic(prefix, deviceID, sensorKey string) string {
 // BuildStateTopic constructs the state topic for a sensor
 // Pattern: {prefix}/sensor/{device_id}/{device_id}_{sensor_key}/state
 func BuildStateTopic(prefix, deviceID, sensorKey string) string {
-	return ConstructHATopic(deviceID, sensorKey, "")
+	return fmt.Sprintf("%s/sensor/%s/%s_%s/state", prefix, deviceID, deviceID, sensorKey)
 }
 
 // BuildUniqueID constructs the unique ID for a sensor

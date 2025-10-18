@@ -32,8 +32,8 @@ func (pf *PowerFactorTopic) PublishDiscovery(ctx context.Context, client mqtt.Cl
 		return fmt.Errorf("client is not connected")
 	}
 
-	// Extract sensor name from topic
-	sensorName := extractSensorName(result.Topic)
+	// Use explicit sensor key from result
+	sensorKey := result.SensorKey
 
 	// Use device info if provided, otherwise fall back to deprecated global config
 	var device DeviceInfo
@@ -50,14 +50,14 @@ func (pf *PowerFactorTopic) PublishDiscovery(ctx context.Context, client mqtt.Cl
 
 	// Build topics using factory
 	deviceID := ExtractDeviceID(&device)
-	discoveryTopic := pf.factory.BuildDiscoveryTopic(deviceID, sensorName)
-	uniqueID := pf.factory.BuildUniqueID(deviceID, sensorName)
+	discoveryTopic := pf.factory.BuildDiscoveryTopic(deviceID, sensorKey)
+	uniqueID := pf.factory.BuildUniqueID(deviceID, sensorKey)
 
 	// Configuration for the power factor sensor
 	config := SensorConfig{
 		Name:                result.Name,
 		UniqueID:            uniqueID,
-		StateTopic:          result.Topic, // result.Topic already includes /state suffix
+		StateTopic:          result.Topic,
 		UnitOfMeasurement:   result.Unit,
 		DeviceClass:         result.DeviceClass,
 		StateClass:          result.StateClass,
@@ -94,7 +94,7 @@ func (pf *PowerFactorTopic) PublishState(ctx context.Context, client mqtt.Client
 		return fmt.Errorf("invalid power factor data: %w", err)
 	}
 
-	// State topic (result.Topic already includes /state suffix)
+	// State topic
 	stateTopic := result.Topic
 
 	// Power factor sensor data with 2 decimal precision
