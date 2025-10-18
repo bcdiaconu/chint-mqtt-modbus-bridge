@@ -39,12 +39,9 @@ func (s *CalculatedRegisterStrategy) Execute(ctx context.Context) (*CommandResul
 		return nil, fmt.Errorf("calculated register '%s' has no formula", s.key)
 	}
 
-	// Check cache first (calculated values are also cached)
-	if s.cache != nil {
-		if cached, found := s.cache.Get(s.key); found {
-			return cached, nil
-		}
-	}
+	// NOTE: We intentionally do NOT check cache here!
+	// Calculated values must be re-evaluated every time using fresh values from cache
+	// because their dependencies (other registers) may have changed.
 
 	// Extract variable names from formula
 	variables, err := s.extractVariables(s.register.Formula)
@@ -74,13 +71,16 @@ func (s *CalculatedRegisterStrategy) Execute(ctx context.Context) (*CommandResul
 	s.evaluator.SetVariables(variableValues)
 
 	// Evaluate formula
+	logger.LogDebug("  📐 Evaluating formula: %s", s.register.Formula)
 	value, err := s.evaluator.Evaluate(s.register.Formula)
 	if err != nil {
 		return nil, fmt.Errorf("failed to evaluate formula for '%s': %w", s.key, err)
 	}
+	logger.LogDebug("  📐 Raw result: %.6f", value)
 
 	// Apply scale factor
 	value = value * s.register.ScaleFactor
+	logger.LogDebug("  📐 After scale factor (%.2f): %.6f", s.register.ScaleFactor, value)
 
 	// Create result
 	result := &CommandResult{

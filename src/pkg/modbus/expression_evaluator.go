@@ -3,6 +3,7 @@ package modbus
 import (
 	"fmt"
 	"math"
+	"mqtt-modbus-bridge/pkg/logger"
 	"regexp"
 	"strconv"
 	"strings"
@@ -50,8 +51,14 @@ func (e *ExpressionEvaluator) Evaluate(expression string) (float64, error) {
 		// Use word boundaries to avoid partial matches (e.g., "power" shouldn't match "power_active")
 		pattern := fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(varName))
 		re := regexp.MustCompile(pattern)
+		oldExpr := expr
 		expr = re.ReplaceAllString(expr, fmt.Sprintf("%f", varValue))
+		if oldExpr != expr {
+			logger.LogDebug("    🔄 Replaced '%s' with %.6f → %s", varName, varValue, expr)
+		}
 	}
+	
+	logger.LogDebug("    📐 Final expression to evaluate: %s", expr)
 
 	// Evaluate the expression
 	result, err := e.evaluateNumericExpression(expr)
@@ -140,16 +147,22 @@ func (e *ExpressionEvaluator) evaluateSqrt(expr string) (float64, error) {
 	}
 
 	inner := matches[1]
+	logger.LogDebug("    🔧 sqrt inner expression: '%s'", inner)
+	
 	innerValue, err := e.evaluateNumericExpression(inner)
 	if err != nil {
+		logger.LogDebug("    ❌ Error evaluating sqrt inner: %v", err)
 		return 0, err
 	}
+	
+	logger.LogDebug("    🔧 sqrt inner value: %.6f", innerValue)
 
 	if innerValue < 0 {
-		return 0, fmt.Errorf("sqrt of negative number")
+		return 0, fmt.Errorf("sqrt of negative number: %.6f", innerValue)
 	}
 
 	result := math.Sqrt(innerValue)
+	logger.LogDebug("    🔧 sqrt result: %.6f", result)
 
 	// Replace sqrt(...) with the result and continue evaluation
 	remaining := strings.Replace(expr, matches[0], fmt.Sprintf("%f", result), 1)
