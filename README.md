@@ -1,10 +1,12 @@
 # chint-mqtt-modbus-bridge
 
-A robust and production-ready bridge for integrating a Chint DDSU666-H energy meter (Modbus RTU) with Home Assistant, using a PUSR USR-DR164 Modbus-MQTT gateway. This project enables seamless, real-time monitoring and automation of energy data in Home Assistant via MQTT Discovery. Designed for reliability, flexibility, and easy extension.
+A robust and production-ready bridge for integrating Chint energy meters (Modbus RTU) with Home Assistant, using a PUSR USR-DR164 Modbus-MQTT gateway. This project enables seamless, real-time monitoring and automation of energy data in Home Assistant via MQTT Discovery. Designed for reliability, flexibility, and easy extension.
 
 **Supported Hardware:**
 
-- **Energy Meter:** Chint DDSU666-H (Modbus RTU)
+- **Energy Meters:** 
+  - [Chint DDSU666-H](docs/DDSU666-H.md) - Comprehensive single-phase meter with advanced features
+  - [Chint DDSU666](docs/DDSU666.md) - Simplified single-phase meter (basic model)
 - **Gateway:** PUSR USR-DR164 (Modbus RTU <-> MQTT)
 
 ---
