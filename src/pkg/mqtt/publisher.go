@@ -6,7 +6,6 @@ import (
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/logger"
 	"mqtt-modbus-bridge/pkg/modbus"
-	"strings"
 	"time"
 
 	paho "github.com/eclipse/paho.mqtt.golang"
@@ -142,15 +141,9 @@ func (p *Publisher) PublishSensorState(ctx context.Context, result *modbus.Comma
 	topicType := p.getTopicTypeFromDeviceClass(result.DeviceClass)
 	handler := p.context.GetHandler(topicType)
 
-	// Extract device name from topic (format: homeassistant/sensor/device_key/sensor_type/state)
-	deviceKey := "unknown"
-	if parts := strings.Split(result.Topic, "/"); len(parts) > 2 {
-		deviceKey = parts[2] // Device key is at index 2
-	}
-
-	// Debug log for all published values showing key details including device
-	logger.LogDebug("📤 [%s] Publishing '%s' (strategy: %s) = %.2f %s → topic_type: %s, device_class: %s",
-		deviceKey, result.Name, result.Strategy, result.Value, result.Unit, topicType, result.DeviceClass)
+	// Debug log: name, value, and full topic for debugging
+	logger.LogDebug("📤 Publishing '%s' = %.2f %s → %s",
+		result.Name, result.Value, result.Unit, result.Topic)
 
 	return handler.PublishState(ctx, p.client, result)
 }
