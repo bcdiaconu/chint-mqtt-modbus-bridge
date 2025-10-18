@@ -54,7 +54,7 @@ func (v *VoltageTopic) PublishDiscovery(ctx context.Context, client mqtt.Client,
 	config := SensorConfig{
 		Name:                result.Name,
 		UniqueID:            fmt.Sprintf("%s_%s", device.Identifiers[0], sensorName),
-		StateTopic:          result.Topic + "/state",
+		StateTopic:          result.Topic, // result.Topic already includes /state suffix
 		UnitOfMeasurement:   result.Unit,
 		DeviceClass:         result.DeviceClass,
 		StateClass:          result.StateClass,
@@ -91,8 +91,8 @@ func (v *VoltageTopic) PublishState(ctx context.Context, client mqtt.Client, res
 		return fmt.Errorf("invalid voltage data: %w", err)
 	}
 
-	// State topic
-	stateTopic := result.Topic + "/state"
+	// State topic (result.Topic already includes /state suffix)
+	stateTopic := result.Topic
 
 	// Voltage sensor data
 	sensorData := SensorState{

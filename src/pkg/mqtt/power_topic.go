@@ -54,7 +54,7 @@ func (p *PowerTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, r
 	config := SensorConfig{
 		Name:                result.Name,
 		UniqueID:            fmt.Sprintf("%s_%s", device.Identifiers[0], sensorName),
-		StateTopic:          result.Topic + "/state",
+		StateTopic:          result.Topic, // result.Topic already includes /state suffix
 		UnitOfMeasurement:   result.Unit,
 		DeviceClass:         result.DeviceClass,
 		StateClass:          result.StateClass,
@@ -91,8 +91,8 @@ func (p *PowerTopic) PublishState(ctx context.Context, client mqtt.Client, resul
 		return fmt.Errorf("invalid power data: %w", err)
 	}
 
-	// State topic
-	stateTopic := result.Topic + "/state"
+	// State topic (result.Topic already includes /state suffix)
+	stateTopic := result.Topic
 
 	// Power sensor data
 	sensorData := SensorState{

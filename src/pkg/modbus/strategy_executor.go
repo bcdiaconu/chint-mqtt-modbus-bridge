@@ -221,7 +221,7 @@ func (e *StrategyExecutor) GetAllStrategies() map[string]interface{} {
 	return allStrategies
 }
 
-// constructHATopic builds Home Assistant MQTT topic
+// constructHATopic builds Home Assistant MQTT topic (including /state suffix for publishing)
 func constructHATopic(deviceID, sensorKey, deviceClass string) string {
 	return fmt.Sprintf("homeassistant/sensor/%s/%s_%s/state", deviceID, deviceID, sensorKey)
 }

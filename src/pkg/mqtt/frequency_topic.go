@@ -54,7 +54,7 @@ func (f *FrequencyTopic) PublishDiscovery(ctx context.Context, client mqtt.Clien
 	config := SensorConfig{
 		Name:                result.Name,
 		UniqueID:            fmt.Sprintf("%s_%s", device.Identifiers[0], sensorName),
-		StateTopic:          result.Topic + "/state",
+		StateTopic:          result.Topic, // result.Topic already includes /state suffix
 		UnitOfMeasurement:   result.Unit,
 		DeviceClass:         result.DeviceClass,
 		StateClass:          result.StateClass,
@@ -91,8 +91,8 @@ func (f *FrequencyTopic) PublishState(ctx context.Context, client mqtt.Client, r
 		return fmt.Errorf("invalid frequency data: %w", err)
 	}
 
-	// State topic
-	stateTopic := result.Topic + "/state"
+	// State topic (result.Topic already includes /state suffix)
+	stateTopic := result.Topic
 
 	// Frequency sensor data
 	sensorData := SensorState{
