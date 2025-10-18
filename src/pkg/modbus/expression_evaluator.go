@@ -57,7 +57,7 @@ func (e *ExpressionEvaluator) Evaluate(expression string) (float64, error) {
 			logger.LogDebug("    🔄 Replaced '%s' with %.6f → %s", varName, varValue, expr)
 		}
 	}
-	
+
 	logger.LogDebug("    📐 Final expression to evaluate: %s", expr)
 
 	// Evaluate the expression
@@ -79,11 +79,6 @@ func (e *ExpressionEvaluator) evaluateNumericExpression(expr string) (float64, e
 	}
 	if strings.Contains(expr, "abs(") {
 		return e.evaluateAbs(expr)
-	}
-
-	// Handle power operator (^)
-	if strings.Contains(expr, "^") {
-		return e.evaluatePower(expr)
 	}
 
 	// Handle addition and subtraction (lowest precedence)
@@ -123,6 +118,20 @@ func (e *ExpressionEvaluator) evaluateNumericExpression(expr string) (float64, e
 		return left / right, nil
 	}
 
+	// Handle power operator (^) - higher precedence than +, -, *, /
+	if idx := e.findOperator(expr, "^"); idx != -1 {
+		left, err := e.evaluateNumericExpression(expr[:idx])
+		if err != nil {
+			return 0, err
+		}
+		right, err := e.evaluateNumericExpression(expr[idx+1:])
+		if err != nil {
+			return 0, err
+		}
+
+		return math.Pow(left, right), nil
+	}
+
 	// Handle parentheses
 	if strings.HasPrefix(expr, "(") && strings.HasSuffix(expr, ")") {
 		return e.evaluateNumericExpression(expr[1 : len(expr)-1])
@@ -148,13 +157,13 @@ func (e *ExpressionEvaluator) evaluateSqrt(expr string) (float64, error) {
 
 	inner := matches[1]
 	logger.LogDebug("    🔧 sqrt inner expression: '%s'", inner)
-	
+
 	innerValue, err := e.evaluateNumericExpression(inner)
 	if err != nil {
 		logger.LogDebug("    ❌ Error evaluating sqrt inner: %v", err)
 		return 0, err
 	}
-	
+
 	logger.LogDebug("    🔧 sqrt inner value: %.6f", innerValue)
 
 	if innerValue < 0 {
@@ -197,26 +206,6 @@ func (e *ExpressionEvaluator) evaluateAbs(expr string) (float64, error) {
 	}
 
 	return e.evaluateNumericExpression(remaining)
-}
-
-// evaluatePower evaluates power operator (^)
-func (e *ExpressionEvaluator) evaluatePower(expr string) (float64, error) {
-	// Find the rightmost ^ operator (right-associative)
-	idx := strings.LastIndex(expr, "^")
-	if idx == -1 {
-		return e.evaluateNumericExpression(expr)
-	}
-
-	left, err := e.evaluateNumericExpression(expr[:idx])
-	if err != nil {
-		return 0, err
-	}
-	right, err := e.evaluateNumericExpression(expr[idx+1:])
-	if err != nil {
-		return 0, err
-	}
-
-	return math.Pow(left, right), nil
 }
 
 // findOperator finds the position of an operator outside of parentheses

@@ -39,10 +39,6 @@ func (s *CalculatedRegisterStrategy) Execute(ctx context.Context) (*CommandResul
 		return nil, fmt.Errorf("calculated register '%s' has no formula", s.key)
 	}
 
-	// NOTE: We intentionally do NOT check cache here!
-	// Calculated values must be re-evaluated every time using fresh values from cache
-	// because their dependencies (other registers) may have changed.
-
 	// Extract variable names from formula
 	variables, err := s.extractVariables(s.register.Formula)
 	if err != nil {
