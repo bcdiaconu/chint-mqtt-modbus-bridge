@@ -342,6 +342,12 @@ func GetAllRegistersFromDevices(devices map[string]Device) map[string]Register {
 					maxKwhPtr = &reg.MaxKwhPerHour
 				}
 
+				// Default scale_factor to 1.0 if not specified
+				scaleFactor := reg.ScaleFactor
+				if scaleFactor == 0 {
+					scaleFactor = 1.0
+				}
+
 				// Create unique key: deviceKey_registerKey
 				uniqueKey := fmt.Sprintf("%s_%s", deviceKey, reg.Key)
 
@@ -349,6 +355,7 @@ func GetAllRegistersFromDevices(devices map[string]Device) map[string]Register {
 					Name:          reg.Name,
 					Address:       address,
 					Unit:          reg.Unit,
+					ScaleFactor:   scaleFactor,
 					DeviceClass:   reg.DeviceClass,
 					StateClass:    reg.StateClass,
 					HATopic:       haTopic,

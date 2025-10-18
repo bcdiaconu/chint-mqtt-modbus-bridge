@@ -28,8 +28,8 @@ func (c *PowerCommand) ParseData(rawData []byte) (float64, error) {
 	bits := binary.BigEndian.Uint32(rawData[:4])
 	value := math.Float32frombits(bits)
 
-	// Convert from KW/KVA to W/VA (multiply by 1000)
-	convertedValue := float64(value) * 1000.0
+	// Apply scale factor from configuration (default 1.0 if not specified)
+	convertedValue := float64(value) * c.register.ScaleFactor
 
 	return convertedValue, nil
 }

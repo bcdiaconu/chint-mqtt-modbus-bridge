@@ -73,6 +73,7 @@ type Register struct {
 	Name          string   `yaml:"name"`
 	Address       uint16   `yaml:"address"`
 	Unit          string   `yaml:"unit"`
+	ScaleFactor   float64  `yaml:"scale_factor,omitempty"` // Multiplier to convert raw value to desired unit (default: 1.0)
 	DeviceClass   string   `yaml:"device_class"`
 	StateClass    string   `yaml:"state_class"`
 	HATopic       string   `yaml:"ha_topic"`

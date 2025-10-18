@@ -19,10 +19,11 @@ type RegisterGroup struct {
 
 // GroupRegister defines a register within a group
 type GroupRegister struct {
-	Key           string  `yaml:"key"`    // Unique identifier (e.g., "voltage")
-	Name          string  `yaml:"name"`   // Display name
-	Offset        int     `yaml:"offset"` // Byte offset from group start
-	Unit          string  `yaml:"unit"`
+	Key           string  `yaml:"key"`                    // Unique identifier (e.g., "voltage")
+	Name          string  `yaml:"name"`                   // Display name
+	Offset        int     `yaml:"offset"`                 // Byte offset from group start
+	Unit          string  `yaml:"unit"`                   // Unit of measurement (V, A, W, kWh, etc.)
+	ScaleFactor   float64 `yaml:"scale_factor,omitempty"` // Multiplier to convert raw value to desired unit (default: 1.0)
 	DeviceClass   string  `yaml:"device_class"`
 	StateClass    string  `yaml:"state_class"`
 	HATopic       string  `yaml:"ha_topic,omitempty"` // Optional: Auto-constructed if not provided in v2.1
@@ -147,10 +148,17 @@ func ConvertGroupsToRegisters(groups map[string]RegisterGroup) map[string]Regist
 				maxKwhPtr = &reg.MaxKwhPerHour
 			}
 
+			// Default scale_factor to 1.0 if not specified
+			scaleFactor := reg.ScaleFactor
+			if scaleFactor == 0 {
+				scaleFactor = 1.0
+			}
+
 			registers[reg.Key] = Register{
 				Name:          reg.Name,
 				Address:       address,
 				Unit:          reg.Unit,
+				ScaleFactor:   scaleFactor,
 				DeviceClass:   reg.DeviceClass,
 				StateClass:    reg.StateClass,
 				HATopic:       reg.HATopic,

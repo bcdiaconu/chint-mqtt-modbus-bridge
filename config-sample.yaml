@@ -28,11 +28,13 @@ logging:
   level: "info"
 
 devices:
-  energy_meter_1:
+  # CHINT DDSU666-H Single-Phase Energy Meter
+  # See docs/DDSU666-H.md for detailed documentation
+  energy_meter_mains:
     metadata:
-      name: "Energy Meter 1"
-      manufacturer: "Chint"
-      model: "DDSU666-H"
+      name: "Energy Meter Mains"
+      manufacturer: "Chint Electric Co."
+      model: "DDSU666-H Single-Phase Meter"
       enabled: true
     
     rtu:
@@ -40,125 +42,9 @@ devices:
       poll_interval: 1000
     
     homeassistant:
-      device_id: "chint_meter_1"
-      manufacturer: "Chint Electric"
-      model: "DDSU666-H Three-Phase Energy Meter"
-    
-    modbus:
-      register_groups:
-        # Instant measurements group - reads all real-time values in single command
-        instant:
-          name: "Instant Measurements"
-          function_code: 0x03         # Read Holding Registers
-          start_address: 0x2000       # Starting register address
-          register_count: 34          # Total registers to read (0x22)
-          enabled: true
-          registers:
-            - key: "voltage"
-              name: "Voltage"
-              offset: 0               # 0x2000 - 0x2000 = 0 (bytes 0-3)
-              unit: "V"
-              device_class: "voltage"
-              state_class: "measurement"
-              min: 100.0              # Minimum valid voltage
-              max: 300.0              # Maximum valid voltage
-
-            - key: "current"
-              name: "Current"
-              offset: 4               # 0x2002 - 0x2000 = 2 registers = 4 bytes
-              unit: "A"
-              device_class: "current"
-              state_class: "measurement"
-              min: 0.0
-              max: 100.0              # Maximum rated current
-
-            - key: "power_active"
-              name: "Active Power"
-              offset: 12              # 0x2006 - 0x2000 = 6 registers = 12 bytes
-              unit: "W"
-              device_class: "power"
-              state_class: "measurement"
-              min: -50000.0           # Allow negative (export)
-              max: 50000.0
-
-            - key: "power_apparent"
-              name: "Apparent Power"
-              offset: 36              # 0x2012 - 0x2000 = 18 registers = 36 bytes
-              unit: "VA"
-              device_class: "apparent_power"
-              state_class: "measurement"
-              min: 0.0
-              max: 100000.0
-
-            - key: "power_reactive"
-              name: "Reactive Power"
-              offset: 0               # Virtual register - calculated from active and apparent
-              unit: "var"
-              device_class: "reactive_power"
-              state_class: "measurement"
-
-            - key: "power_factor"
-              name: "Power Factor"
-              offset: 48              # 0x2018 - 0x2000 = 24 registers = 48 bytes
-              unit: ""
-              device_class: "power_factor"
-              state_class: "measurement"
-              min: -1.0
-              max: 1.0
-
-            - key: "frequency"
-              name: "Frequency"
-              offset: 64              # 0x2020 - 0x2000 = 32 registers = 64 bytes
-              unit: "Hz"
-              device_class: "frequency"
-              state_class: "measurement"
-              min: 45.0
-              max: 65.0
-
-        # Energy counters group - reads cumulative energy values
-        energy:
-          name: "Energy Counters"
-          function_code: 0x03
-          start_address: 0x4000
-          register_count: 22          # Number of registers (0x16)
-          enabled: true
-          registers:
-            - key: "energy_total"
-              name: "Total Active Energy"
-              offset: 0               # 0x4000 - 0x4000 = 0
-              unit: "kWh"
-              device_class: "energy"
-              state_class: "total_increasing"
-              max_kwh_per_hour: 20.0  # Maximum expected change per hour
-
-            - key: "energy_imported"
-              name: "Imported Energy"
-              offset: 20              # 0x400A - 0x4000 = 10 registers = 20 bytes
-              unit: "kWh"
-              device_class: "energy"
-              state_class: "total_increasing"
-              max_kwh_per_hour: 64.0
-
-            - key: "energy_exported"
-              name: "Exported Energy"
-              offset: 40              # 0x4014 - 0x4000 = 20 registers = 40 bytes
-              unit: "kWh"
-              device_class: "energy"
-              state_class: "total_increasing"
-              max_kwh_per_hour: 3.0
-  
-  energy_meter_2:
-    metadata:
-      name: "Energy Meter 2"
-      manufacturer: "Chint"
-      model: "DTSU666-H"
-      enabled: true
-    
-    rtu:
-      slave_id: 12
-    
-    # homeassistant section omitted - will use device key "energy_meter_2" as device_id
-    # and metadata values for manufacturer/model
+      device_id: "energy_meter_mains"
+      manufacturer: "Chint Electric Co."
+      model: "DDSU666-H Single-Phase Energy Meter"
     
     modbus:
       register_groups:
@@ -191,10 +77,37 @@ devices:
               name: "Active Power"
               offset: 12
               unit: "W"
+              scale_factor: 1000
               device_class: "power"
               state_class: "measurement"
               min: -50000.0
               max: 50000.0
+
+            - key: "power_apparent"
+              name: "Apparent Power"
+              offset: 36
+              unit: "VA"
+              scale_factor: 1000
+              device_class: "apparent_power"
+              state_class: "measurement"
+              min: 0.0
+              max: 100000.0
+
+            - key: "power_reactive"
+              name: "Reactive Power"
+              offset: 0
+              unit: "var"
+              device_class: "reactive_power"
+              state_class: "measurement"
+
+            - key: "power_factor"
+              name: "Power Factor"
+              offset: 48
+              unit: ""
+              device_class: "power_factor"
+              state_class: "measurement"
+              min: -1.0
+              max: 1.0
 
             - key: "frequency"
               name: "Frequency"
@@ -219,7 +132,131 @@ devices:
               device_class: "energy"
               state_class: "total_increasing"
               max_kwh_per_hour: 20.0
-  
+
+            - key: "energy_imported"
+              name: "Imported Energy"
+              offset: 20
+              unit: "kWh"
+              device_class: "energy"
+              state_class: "total_increasing"
+              max_kwh_per_hour: 64.0
+
+            - key: "energy_exported"
+              name: "Exported Energy"
+              offset: 40
+              unit: "kWh"
+              device_class: "energy"
+              state_class: "total_increasing"
+              max_kwh_per_hour: 3.0
+
+  # CHINT DDSU666 Single-Phase Energy Meter (Simplified Model)
+  # See docs/DDSU666.md for detailed documentation
+  energy_meter_lights:
+    metadata:
+      name: "Energy Meter Lights"
+      manufacturer: "Chint Electric Co."
+      model: "DDSU666 Single-Phase Meter"
+      enabled: true
+    
+    rtu:
+      slave_id: 1                     # Different slave ID from main meter
+      poll_interval: 1000
+    
+    homeassistant:
+      device_id: "energy_meter_lights"
+      manufacturer: "Chint Electric Co."
+      model: "DDSU666 Single-Phase Energy Meter"
+    
+    modbus:
+      register_groups:
+        instant:
+          name: "Instant Measurements"
+          function_code: 0x03
+          start_address: 0x2000
+          register_count: 16
+          enabled: true
+          registers:
+            - key: "voltage"
+              name: "Voltage"
+              offset: 0
+              unit: "V"
+              device_class: "voltage"
+              state_class: "measurement"
+              min: 100.0
+              max: 300.0
+
+            - key: "current"
+              name: "Current"
+              offset: 4
+              unit: "A"
+              device_class: "current"
+              state_class: "measurement"
+              min: 0.0
+              max: 100.0
+
+            - key: "power_active"
+              name: "Active Power"
+              offset: 8
+              unit: "W"
+              scale_factor: 1000.0    # DDSU666 reports in kW, convert to W
+              device_class: "power"
+              state_class: "measurement"
+              min: -50000.0
+              max: 50000.0
+
+            - key: "power_reactive"
+              name: "Reactive Power"
+              offset: 12
+              unit: "var"
+              scale_factor: 1000.0    # DDSU666 reports in kvar, convert to var
+              device_class: "reactive_power"
+              state_class: "measurement"
+              min: -50000.0
+              max: 50000.0
+
+            - key: "power_factor"
+              name: "Power Factor"
+              offset: 20
+              unit: ""
+              device_class: "power_factor"
+              state_class: "measurement"
+              min: -1.0
+              max: 1.0
+
+            - key: "frequency"
+              name: "Frequency"
+              offset: 28
+              unit: "Hz"
+              device_class: "frequency"
+              state_class: "measurement"
+              min: 45.0
+              max: 65.0
+
+        energy:
+          name: "Energy Counter"
+          function_code: 0x03
+          start_address: 0x4000
+          register_count: 12
+          enabled: true
+          registers:
+            - key: "energy_total"
+              name: "Total Active Energy"
+              offset: 0
+              unit: "kWh"
+              device_class: "energy"
+              state_class: "total_increasing"
+              max_kwh_per_hour: 20.0
+
+            - key: "energy_exported"
+              name: "Reverse Active Energy"
+              offset: 20
+              unit: "kWh"
+              device_class: "energy"
+              state_class: "total_increasing"
+              max_kwh_per_hour: 3.0
+
+  # Example: Growatt Solar Inverter
+  # Demonstrates configuration for different device types
   inverter_1:
     metadata:
       name: "Solar Inverter"

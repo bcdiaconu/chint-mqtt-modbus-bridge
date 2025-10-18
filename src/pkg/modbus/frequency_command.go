@@ -28,5 +28,6 @@ func (c *FrequencyCommand) ParseData(rawData []byte) (float64, error) {
 	bits := binary.BigEndian.Uint32(rawData[:4])
 	value := math.Float32frombits(bits)
 
-	return float64(value), nil
+	// Apply scale factor from configuration
+	return float64(value) * c.register.ScaleFactor, nil
 }

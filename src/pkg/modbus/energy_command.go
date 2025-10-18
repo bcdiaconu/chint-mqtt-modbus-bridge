@@ -29,8 +29,8 @@ func (c *EnergyCommand) ParseData(rawData []byte) (float64, error) {
 	bits := binary.BigEndian.Uint32(rawData[:4])
 	value := math.Float32frombits(bits)
 
-	// Convert to float64
-	currentValue := float64(value)
+	// Apply scale factor from configuration and convert to float64
+	currentValue := float64(value) * c.register.ScaleFactor
 
 	// Validate that the value is reasonable (not NaN, not Inf)
 	if math.IsNaN(currentValue) || math.IsInf(currentValue, 0) {
