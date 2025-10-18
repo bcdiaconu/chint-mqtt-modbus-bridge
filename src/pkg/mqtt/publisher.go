@@ -140,6 +140,11 @@ func (p *Publisher) PublishSensorState(ctx context.Context, result *modbus.Comma
 	// Determine topic type based on device class
 	topicType := p.getTopicTypeFromDeviceClass(result.DeviceClass)
 	handler := p.context.GetHandler(topicType)
+
+	// Debug log for all published values showing key details
+	logger.LogDebug("📤 Publishing '%s' (strategy: %s) = %.2f %s → topic_type: %s, device_class: %s",
+		result.Name, result.Strategy, result.Value, result.Unit, topicType, result.DeviceClass)
+
 	return handler.PublishState(ctx, p.client, result)
 }
 

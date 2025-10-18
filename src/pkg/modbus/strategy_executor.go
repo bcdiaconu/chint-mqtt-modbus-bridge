@@ -142,9 +142,11 @@ func (e *StrategyExecutor) ExecuteAll(ctx context.Context) (map[string]*CommandR
 				continue
 			}
 
-			// Merge group results
+			// Merge group results and log each register value
 			for regKey, result := range groupResults {
 				results[regKey] = result
+				logger.LogDebug("  📊 [Group '%s'] %s = %.2f %s (device_class: %s)",
+					key, result.Name, result.Value, result.Unit, result.DeviceClass)
 			}
 
 			logger.LogDebug("✅ Group '%s' executed: %d registers", key, len(groupResults))
@@ -160,7 +162,8 @@ func (e *StrategyExecutor) ExecuteAll(ctx context.Context) (map[string]*CommandR
 			}
 
 			results[key] = result
-			logger.LogDebug("✅ Calculated '%s' = %.2f %s", key, result.Value, result.Unit)
+			logger.LogDebug("  🧮 [Calculated '%s'] %s = %.2f %s (device_class: %s)",
+				key, result.Name, result.Value, result.Unit, result.DeviceClass)
 			continue
 		}
 	}

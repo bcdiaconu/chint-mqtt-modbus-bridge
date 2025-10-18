@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"mqtt-modbus-bridge/pkg/config"
+	"mqtt-modbus-bridge/pkg/logger"
 	"regexp"
 )
 
@@ -59,11 +60,13 @@ func (s *CalculatedRegisterStrategy) Execute(ctx context.Context) (*CommandResul
 
 		cached, found := s.cache.Get(fullKey)
 		if !found {
+			logger.LogDebug("  ⚠️  Variable '%s' → '%s' NOT FOUND in cache for '%s'", varName, fullKey, s.key)
 			return nil, fmt.Errorf("variable '%s' (resolved to '%s') not found in cache for calculated register '%s'",
 				varName, fullKey, s.key)
 		}
 
 		variableValues[varName] = cached.Value
+		logger.LogDebug("  ✓ Variable '%s' → '%s' = %.2f %s", varName, fullKey, cached.Value, cached.Unit)
 	}
 
 	// Set variables in evaluator
