@@ -179,8 +179,10 @@ func (e *EnergyTopic) ValidateData(result *modbus.CommandResult, register *confi
 			timeDiff := currentTime.Sub(lastTime)
 			hoursElapsed := timeDiff.Hours()
 
-			// Only validate if time has passed (avoid division by zero)
-			if hoursElapsed > 0 {
+			// Only validate if enough time has passed (minimum 30 seconds to avoid false positives)
+			// This prevents validation errors during startup or rapid consecutive readings
+			const minValidationInterval = 30.0 / 3600.0 // 30 seconds in hours
+			if hoursElapsed >= minValidationInterval {
 				// Calculate energy change
 				energyChange := math.Abs(currentValue - lastValue)
 
