@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"mqtt-modbus-bridge/pkg/config"
+	"mqtt-modbus-bridge/pkg/logger"
 	"mqtt-modbus-bridge/pkg/modbus"
 	"time"
 
@@ -14,13 +15,15 @@ import (
 
 // PowerTopic handles power sensor publishing (active, apparent, reactive)
 type PowerTopic struct {
-	config *config.HAConfig
+	config  *config.HAConfig
+	factory *TopicFactory
 }
 
 // NewPowerTopic creates a new power topic handler
 func NewPowerTopic(config *config.HAConfig) *PowerTopic {
 	return &PowerTopic{
-		config: config,
+		config:  config,
+		factory: NewTopicFactory(config.DiscoveryPrefix),
 	}
 }
 
@@ -46,14 +49,15 @@ func (p *PowerTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, r
 		}
 	}
 
-	// Topic for discovery
-	discoveryTopic := fmt.Sprintf("%s/sensor/%s_%s/config",
-		p.config.DiscoveryPrefix, device.Identifiers[0], sensorName)
+	// Build topics using factory
+	deviceID := ExtractDeviceID(&device)
+	discoveryTopic := p.factory.BuildDiscoveryTopic(deviceID, sensorName)
+	uniqueID := p.factory.BuildUniqueID(deviceID, sensorName)
 
 	// Configuration for the power sensor
 	config := SensorConfig{
 		Name:                result.Name,
-		UniqueID:            fmt.Sprintf("%s_%s", device.Identifiers[0], sensorName),
+		UniqueID:            uniqueID,
 		StateTopic:          result.Topic, // result.Topic already includes /state suffix
 		UnitOfMeasurement:   result.Unit,
 		DeviceClass:         result.DeviceClass,
@@ -70,6 +74,9 @@ func (p *PowerTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, r
 	if err != nil {
 		return fmt.Errorf("error serializing power configuration: %w", err)
 	}
+
+	logger.LogDebug("📡 Publishing power discovery: %s (unit: %s, device_class: %s)",
+		discoveryTopic, result.Unit, result.DeviceClass)
 
 	// Publish configuration
 	token := client.Publish(discoveryTopic, 0, true, configJSON)

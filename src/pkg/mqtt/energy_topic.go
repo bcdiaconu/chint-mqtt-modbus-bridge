@@ -16,6 +16,7 @@ import (
 // EnergyTopic handles energy sensor publishing (total, imported, exported)
 type EnergyTopic struct {
 	config        *config.HAConfig
+	factory       *TopicFactory
 	lastValues    map[string]float64   // Store last valid values by sensor name
 	lastTimestamp map[string]time.Time // Store last read timestamps by sensor name
 	mutex         sync.RWMutex         // Protect concurrent access to maps
@@ -25,6 +26,7 @@ type EnergyTopic struct {
 func NewEnergyTopic(config *config.HAConfig) *EnergyTopic {
 	return &EnergyTopic{
 		config:        config,
+		factory:       NewTopicFactory(config.DiscoveryPrefix),
 		lastValues:    make(map[string]float64),
 		lastTimestamp: make(map[string]time.Time),
 	}
@@ -52,14 +54,15 @@ func (e *EnergyTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, 
 		}
 	}
 
-	// Topic for discovery
-	discoveryTopic := fmt.Sprintf("%s/sensor/%s_%s/config",
-		e.config.DiscoveryPrefix, device.Identifiers[0], sensorName)
+	// Build topics using factory
+	deviceID := ExtractDeviceID(&device)
+	discoveryTopic := e.factory.BuildDiscoveryTopic(deviceID, sensorName)
+	uniqueID := e.factory.BuildUniqueID(deviceID, sensorName)
 
 	// Configuration for the energy sensor
 	config := SensorConfig{
 		Name:                result.Name,
-		UniqueID:            fmt.Sprintf("%s_%s", device.Identifiers[0], sensorName),
+		UniqueID:            uniqueID,
 		StateTopic:          result.Topic, // result.Topic already includes /state suffix
 		UnitOfMeasurement:   result.Unit,
 		DeviceClass:         result.DeviceClass,

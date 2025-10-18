@@ -219,8 +219,16 @@ func (p *Publisher) PublishDiagnosticDiscovery(ctx context.Context) error {
 	dummyResult := &modbus.CommandResult{
 		Name: "Diagnostic",
 	}
-	// Diagnostic is bridge-level, use nil deviceInfo (falls back to global config)
-	return handler.PublishDiscovery(ctx, p.client, dummyResult, nil)
+
+	// Create DeviceInfo for the bridge itself using constants
+	bridgeDeviceInfo := &DeviceInfo{
+		Name:         config.BridgeDeviceName,
+		Identifiers:  []string{config.BridgeDeviceID},
+		Manufacturer: config.BridgeDeviceManufacturer,
+		Model:        config.BridgeDeviceModel,
+	}
+
+	return handler.PublishDiscovery(ctx, p.client, dummyResult, bridgeDeviceInfo)
 }
 
 // SensorConfig configuration for a Home Assistant sensor

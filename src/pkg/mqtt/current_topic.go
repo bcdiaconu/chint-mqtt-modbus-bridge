@@ -14,13 +14,15 @@ import (
 
 // CurrentTopic handles current sensor publishing
 type CurrentTopic struct {
-	config *config.HAConfig
+	config  *config.HAConfig
+	factory *TopicFactory
 }
 
 // NewCurrentTopic creates a new current topic handler
 func NewCurrentTopic(config *config.HAConfig) *CurrentTopic {
 	return &CurrentTopic{
-		config: config,
+		config:  config,
+		factory: NewTopicFactory(config.DiscoveryPrefix),
 	}
 }
 
@@ -46,15 +48,16 @@ func (c *CurrentTopic) PublishDiscovery(ctx context.Context, client mqtt.Client,
 		}
 	}
 
-	// Topic for discovery
-	discoveryTopic := fmt.Sprintf("%s/sensor/%s_%s/config",
-		c.config.DiscoveryPrefix, device.Identifiers[0], sensorName)
+	// Build topics using factory
+	deviceID := ExtractDeviceID(&device)
+	discoveryTopic := c.factory.BuildDiscoveryTopic(deviceID, sensorName)
+	uniqueID := c.factory.BuildUniqueID(deviceID, sensorName)
 
 	// Configuration for the current sensor
 	config := SensorConfig{
 		Name:                result.Name,
-		UniqueID:            fmt.Sprintf("%s_%s", device.Identifiers[0], sensorName),
-		StateTopic:          result.Topic, // result.Topic already includes /state suffix
+		UniqueID:            uniqueID,
+		StateTopic:          result.Topic,
 		UnitOfMeasurement:   result.Unit,
 		DeviceClass:         result.DeviceClass,
 		StateClass:          result.StateClass,

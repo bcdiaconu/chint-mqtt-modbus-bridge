@@ -14,13 +14,15 @@ import (
 
 // FrequencyTopic handles frequency sensor publishing
 type FrequencyTopic struct {
-	config *config.HAConfig
+	config  *config.HAConfig
+	factory *TopicFactory
 }
 
 // NewFrequencyTopic creates a new frequency topic handler
 func NewFrequencyTopic(config *config.HAConfig) *FrequencyTopic {
 	return &FrequencyTopic{
-		config: config,
+		config:  config,
+		factory: NewTopicFactory(config.DiscoveryPrefix),
 	}
 }
 
@@ -46,14 +48,15 @@ func (f *FrequencyTopic) PublishDiscovery(ctx context.Context, client mqtt.Clien
 		}
 	}
 
-	// Topic for discovery
-	discoveryTopic := fmt.Sprintf("%s/sensor/%s_%s/config",
-		f.config.DiscoveryPrefix, device.Identifiers[0], sensorName)
+	// Build topics using factory
+	deviceID := ExtractDeviceID(&device)
+	discoveryTopic := f.factory.BuildDiscoveryTopic(deviceID, sensorName)
+	uniqueID := f.factory.BuildUniqueID(deviceID, sensorName)
 
 	// Configuration for the frequency sensor
 	config := SensorConfig{
 		Name:                result.Name,
-		UniqueID:            fmt.Sprintf("%s_%s", device.Identifiers[0], sensorName),
+		UniqueID:            uniqueID,
 		StateTopic:          result.Topic, // result.Topic already includes /state suffix
 		UnitOfMeasurement:   result.Unit,
 		DeviceClass:         result.DeviceClass,

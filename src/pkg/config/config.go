@@ -8,6 +8,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Bridge device constants - used for the MQTT-Modbus bridge itself in Home Assistant
+const (
+	BridgeDeviceName         = "MQTT-Modbus Bridge"
+	BridgeDeviceID           = "mqtt_modbus_bridge"
+	BridgeDeviceManufacturer = "IveronSoft"
+	BridgeDeviceModel        = "MQTT-Modbus Gateway"
+)
+
 // Config represents the complete application configuration
 // Follows SRP - only responsible for configuration management
 // Supports V1 (registers), V2.0 (register_groups), and V2.1 (devices) formats

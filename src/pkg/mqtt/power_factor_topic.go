@@ -14,13 +14,15 @@ import (
 
 // PowerFactorTopic handles power factor sensor publishing
 type PowerFactorTopic struct {
-	config *config.HAConfig
+	config  *config.HAConfig
+	factory *TopicFactory
 }
 
 // NewPowerFactorTopic creates a new power factor topic handler
 func NewPowerFactorTopic(config *config.HAConfig) *PowerFactorTopic {
 	return &PowerFactorTopic{
-		config: config,
+		config:  config,
+		factory: NewTopicFactory(config.DiscoveryPrefix),
 	}
 }
 
@@ -46,14 +48,15 @@ func (pf *PowerFactorTopic) PublishDiscovery(ctx context.Context, client mqtt.Cl
 		}
 	}
 
-	// Topic for discovery
-	discoveryTopic := fmt.Sprintf("%s/sensor/%s_%s/config",
-		pf.config.DiscoveryPrefix, device.Identifiers[0], sensorName)
+	// Build topics using factory
+	deviceID := ExtractDeviceID(&device)
+	discoveryTopic := pf.factory.BuildDiscoveryTopic(deviceID, sensorName)
+	uniqueID := pf.factory.BuildUniqueID(deviceID, sensorName)
 
 	// Configuration for the power factor sensor
 	config := SensorConfig{
 		Name:                result.Name,
-		UniqueID:            fmt.Sprintf("%s_%s", device.Identifiers[0], sensorName),
+		UniqueID:            uniqueID,
 		StateTopic:          result.Topic, // result.Topic already includes /state suffix
 		UnitOfMeasurement:   result.Unit,
 		DeviceClass:         result.DeviceClass,

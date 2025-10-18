@@ -6,6 +6,7 @@ import (
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/gateway"
 	"mqtt-modbus-bridge/pkg/logger"
+	"mqtt-modbus-bridge/pkg/topics"
 	"time"
 )
 
@@ -68,7 +69,7 @@ func (e *StrategyExecutor) RegisterFromDevices(devices map[string]config.Device)
 					ApplyAbs:    groupReg.ApplyAbs, // Copy apply_abs flag
 					DeviceClass: groupReg.DeviceClass,
 					StateClass:  groupReg.StateClass,
-					HATopic:     constructHATopic(deviceKey, groupReg.Key, groupReg.DeviceClass),
+					HATopic:     topics.ConstructHATopic(deviceKey, groupReg.Key, groupReg.DeviceClass),
 				}
 
 				regKey := fmt.Sprintf("%s_%s", deviceKey, groupReg.Key)
@@ -109,7 +110,7 @@ func (e *StrategyExecutor) RegisterFromDevices(devices map[string]config.Device)
 				ScaleFactor: scaleFactor,
 				DeviceClass: calc.DeviceClass,
 				StateClass:  calc.StateClass,
-				HATopic:     constructHATopic(deviceKey, calc.Key, calc.DeviceClass),
+				HATopic:     topics.ConstructHATopic(deviceKey, calc.Key, calc.DeviceClass),
 			}
 
 			calcKey := fmt.Sprintf("%s_%s", deviceKey, calc.Key)
@@ -219,9 +220,4 @@ func (e *StrategyExecutor) GetAllStrategies() map[string]interface{} {
 	}
 
 	return allStrategies
-}
-
-// constructHATopic builds Home Assistant MQTT topic (including /state suffix for publishing)
-func constructHATopic(deviceID, sensorKey, deviceClass string) string {
-	return fmt.Sprintf("homeassistant/sensor/%s/%s_%s/state", deviceID, deviceID, sensorKey)
 }

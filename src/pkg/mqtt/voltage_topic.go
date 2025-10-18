@@ -14,13 +14,15 @@ import (
 
 // VoltageTopic handles voltage sensor publishing
 type VoltageTopic struct {
-	config *config.HAConfig
+	config  *config.HAConfig
+	factory *TopicFactory
 }
 
 // NewVoltageTopic creates a new voltage topic handler
 func NewVoltageTopic(config *config.HAConfig) *VoltageTopic {
 	return &VoltageTopic{
-		config: config,
+		config:  config,
+		factory: NewTopicFactory(config.DiscoveryPrefix),
 	}
 }
 
@@ -46,15 +48,16 @@ func (v *VoltageTopic) PublishDiscovery(ctx context.Context, client mqtt.Client,
 		}
 	}
 
-	// Topic for discovery
-	discoveryTopic := fmt.Sprintf("%s/sensor/%s_%s/config",
-		v.config.DiscoveryPrefix, device.Identifiers[0], sensorName)
+	// Build topics using factory
+	deviceID := ExtractDeviceID(&device)
+	discoveryTopic := v.factory.BuildDiscoveryTopic(deviceID, sensorName)
+	uniqueID := v.factory.BuildUniqueID(deviceID, sensorName)
 
 	// Configuration for the voltage sensor
 	config := SensorConfig{
 		Name:                result.Name,
-		UniqueID:            fmt.Sprintf("%s_%s", device.Identifiers[0], sensorName),
-		StateTopic:          result.Topic, // result.Topic already includes /state suffix
+		UniqueID:            uniqueID,
+		StateTopic:          result.Topic,
 		UnitOfMeasurement:   result.Unit,
 		DeviceClass:         result.DeviceClass,
 		StateClass:          result.StateClass,
@@ -91,7 +94,6 @@ func (v *VoltageTopic) PublishState(ctx context.Context, client mqtt.Client, res
 		return fmt.Errorf("invalid voltage data: %w", err)
 	}
 
-	// State topic (result.Topic already includes /state suffix)
 	stateTopic := result.Topic
 
 	// Voltage sensor data

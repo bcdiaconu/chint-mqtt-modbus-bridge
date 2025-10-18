@@ -15,13 +15,15 @@ import (
 // DiagnosticTopic handles Home Assistant diagnostic sensor publishing
 // DiagnosticTopic handles diagnostic-related publishing
 type DiagnosticTopic struct {
-	config *config.HAConfig
+	config  *config.HAConfig
+	factory *TopicFactory
 }
 
 // NewDiagnosticTopic creates a new diagnostic topic handler
 func NewDiagnosticTopic(config *config.HAConfig) *DiagnosticTopic {
 	return &DiagnosticTopic{
-		config: config,
+		config:  config,
+		factory: NewTopicFactory(config.DiscoveryPrefix),
 	}
 }
 
@@ -31,28 +33,35 @@ func (d *DiagnosticTopic) PublishDiscovery(ctx context.Context, client mqtt.Clie
 		return fmt.Errorf("client is not connected")
 	}
 
-	// Use device info if provided, otherwise fall back to deprecated global config
+	// Use device info if provided, otherwise fall back to bridge constants
 	var device DeviceInfo
 	if deviceInfo != nil {
 		device = *deviceInfo
 	} else {
+		// Fallback to bridge device constants (should not happen in normal operation)
 		device = DeviceInfo{
-			Name:         d.config.DeviceName,
-			Identifiers:  []string{d.config.DeviceID},
-			Manufacturer: d.config.Manufacturer,
-			Model:        d.config.Model,
+			Name:         config.BridgeDeviceName,
+			Identifiers:  []string{config.BridgeDeviceID},
+			Manufacturer: config.BridgeDeviceManufacturer,
+			Model:        config.BridgeDeviceModel,
 		}
 	}
 
 	// Topic for diagnostic sensor discovery
-	discoveryTopic := fmt.Sprintf("%s/sensor/%s_diagnostic/config",
-		d.config.DiscoveryPrefix, device.Identifiers[0])
+	logger.LogDebug("🔍 Bridge device info: Name='%s', ID='%s', Manufacturer='%s', Model='%s'",
+		device.Name, device.Identifiers[0], device.Manufacturer, device.Model)
+
+	// Build topics using factory
+	deviceID := ExtractDeviceID(&device)
+	discoveryTopic := d.factory.BuildDiagnosticDiscoveryTopic(deviceID)
+	stateTopic := d.factory.BuildDiagnosticStateTopic(deviceID)
+	uniqueID := d.factory.BuildDiagnosticUniqueID(deviceID)
 
 	// Configuration for the diagnostic sensor
 	config := SensorConfig{
 		Name:                   "Diagnostic",
-		UniqueID:               fmt.Sprintf("%s_diagnostic", device.Identifiers[0]),
-		StateTopic:             d.config.DiagnosticTopic,
+		UniqueID:               uniqueID,
+		StateTopic:             stateTopic,
 		UnitOfMeasurement:      "",
 		DeviceClass:            "enum",
 		StateClass:             "",
@@ -156,7 +165,13 @@ func (d *DiagnosticTopic) PublishDiagnostic(ctx context.Context, client mqtt.Cli
 		return fmt.Errorf("error marshaling diagnostic: %w", err)
 	}
 
-	token := client.Publish(d.config.DiagnosticTopic, 0, false, payload)
+	// Publish to Home Assistant state topic using bridge device ID constant
+	bridgeDeviceID := config.BridgeDeviceID
+	stateTopic := d.factory.BuildDiagnosticStateTopic(bridgeDeviceID)
+
+	logger.LogDebug("🔧 📤 Publishing diagnostic to '%s': %s", stateTopic, message)
+
+	token := client.Publish(stateTopic, 0, false, payload)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
