@@ -359,6 +359,8 @@ func (app *Application) publishDiscoveryConfigsV21(ctx context.Context) error {
 
 		// Create mock results for this device's sensors
 		var deviceResults []*modbus.CommandResult
+
+		// Add register_groups sensors
 		for _, group := range device.Modbus.RegisterGroups {
 			for _, register := range group.Registers {
 				// Construct the full HA topic path automatically with discovery prefix
@@ -376,6 +378,24 @@ func (app *Application) publishDiscoveryConfigsV21(ctx context.Context) error {
 				}
 				deviceResults = append(deviceResults, result)
 			}
+		}
+
+		// Add calculated_values sensors
+		for _, calc := range device.CalculatedValues {
+			// Construct the full HA topic path automatically with discovery prefix
+			topic := topics.ConstructHATopic(app.config.HomeAssistant.DiscoveryPrefix, haDeviceID, calc.Key, calc.DeviceClass)
+
+			result := &modbus.CommandResult{
+				Strategy:    calc.Key,
+				Name:        calc.Name,
+				Value:       0, // Mock value
+				Unit:        calc.Unit,
+				Topic:       topic,
+				SensorKey:   calc.Key, // Just the sensor key, not device_id_sensor_key
+				DeviceClass: calc.DeviceClass,
+				StateClass:  calc.StateClass,
+			}
+			deviceResults = append(deviceResults, result)
 		}
 
 		// Publish sensor discoveries for this device

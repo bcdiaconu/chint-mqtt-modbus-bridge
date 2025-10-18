@@ -242,8 +242,8 @@ devices:
           register_count: 12
           enabled: true
           registers:
-            - key: "energy_total"
-              name: "Total Active Energy"
+            - key: "energy_imported"
+              name: "Imported Active Energy"
               offset: 0
               unit: "kWh"
               device_class: "energy"
@@ -266,6 +266,12 @@ devices:
         formula: "sqrt(power_active^2 + power_reactive^2)"
         device_class: "apparent_power"
         state_class: "measurement"
+      - key: "energy_total"
+        name: "Total Active Energy"
+        unit: "kWh"
+        formula: "abs(energy_imported - energy_exported)"
+        device_class: "energy"
+        state_class: "total_increasing"
 
   # Example: Growatt Solar Inverter
   # Demonstrates configuration for different device types
