@@ -54,13 +54,14 @@ func (s *CalculatedRegisterStrategy) Execute(ctx context.Context) (*CommandResul
 
 	// Fetch all variable values from cache
 	variableValues := make(map[string]float64)
+	logger.LogDebug("  🔍 Resolving variables for '%s':", s.key)
 	for _, varName := range variables {
 		// Prefix variable name with device prefix
 		fullKey := fmt.Sprintf("%s_%s", s.devicePrefix, varName)
 
 		cached, found := s.cache.Get(fullKey)
 		if !found {
-			logger.LogDebug("  ⚠️  Variable '%s' → '%s' NOT FOUND in cache for '%s'", varName, fullKey, s.key)
+			logger.LogDebug("  ⚠️  Variable '%s' → '%s' NOT FOUND in cache", varName, fullKey)
 			return nil, fmt.Errorf("variable '%s' (resolved to '%s') not found in cache for calculated register '%s'",
 				varName, fullKey, s.key)
 		}

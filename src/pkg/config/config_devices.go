@@ -407,6 +407,7 @@ func GetAllRegistersFromDevices(devices map[string]Device) map[string]Register {
 					Address:       address,
 					Unit:          reg.Unit,
 					ScaleFactor:   scaleFactor,
+					ApplyAbs:      reg.ApplyAbs, // Copy apply_abs flag
 					Formula:       reg.Formula,
 					DependsOn:     reg.DependsOn,
 					DeviceClass:   reg.DeviceClass,

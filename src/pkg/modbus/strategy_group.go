@@ -93,6 +93,11 @@ func (s *GroupRegisterStrategy) Execute(ctx context.Context) (map[string]*Comman
 		// Apply scale factor
 		value := float64(rawValue) * reg.ScaleFactor
 
+		// Apply absolute value if configured
+		if reg.ApplyAbs {
+			value = math.Abs(value)
+		}
+
 		// Create result
 		result := &CommandResult{
 			Strategy:    "group_register",

@@ -65,6 +65,7 @@ func (e *StrategyExecutor) RegisterFromDevices(devices map[string]config.Device)
 					Address:     address,
 					Unit:        groupReg.Unit,
 					ScaleFactor: scaleFactor,
+					ApplyAbs:    groupReg.ApplyAbs, // Copy apply_abs flag
 					DeviceClass: groupReg.DeviceClass,
 					StateClass:  groupReg.StateClass,
 					HATopic:     constructHATopic(deviceKey, groupReg.Key, groupReg.DeviceClass),

@@ -24,6 +24,7 @@ type GroupRegister struct {
 	Offset        int      `yaml:"offset"`                 // Byte offset from group start (-1 for calculated registers)
 	Unit          string   `yaml:"unit"`                   // Unit of measurement (V, A, W, kWh, etc.)
 	ScaleFactor   float64  `yaml:"scale_factor,omitempty"` // Multiplier to convert raw value to desired unit (default: 1.0)
+	ApplyAbs      bool     `yaml:"apply_abs,omitempty"`    // Apply absolute value to result (e.g., for power factor)
 	Formula       string   `yaml:"formula,omitempty"`      // Mathematical formula for calculated values (e.g., "sqrt(power_active^2 + power_reactive^2)")
 	DependsOn     []string `yaml:"depends_on,omitempty"`   // Register keys this calculation depends on
 	DeviceClass   string   `yaml:"device_class"`
