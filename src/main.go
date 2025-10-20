@@ -6,7 +6,10 @@ import (
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/diagnostics"
 	"mqtt-modbus-bridge/pkg/gateway"
+	"mqtt-modbus-bridge/pkg/health"
+	httpHealth "mqtt-modbus-bridge/pkg/http"
 	"mqtt-modbus-bridge/pkg/logger"
+	"mqtt-modbus-bridge/pkg/metrics"
 	"mqtt-modbus-bridge/pkg/modbus"
 	"mqtt-modbus-bridge/pkg/mqtt"
 	"mqtt-modbus-bridge/pkg/topics"
@@ -29,6 +32,7 @@ const (
 
 // Application main application class
 // Facade Pattern - simplified interface for complex system
+// Refactored to use extracted health monitoring and performance tracking components
 type Application struct {
 	config    *config.Config
 	gateway   *gateway.USRGateway
@@ -37,20 +41,14 @@ type Application struct {
 
 	mu sync.Mutex // Mutex for synchronizing access to the gateway
 
-	// Gateway status tracking
-	consecutiveErrors int
-	isGatewayOnline   bool
-	lastErrorTime     time.Time
+	// Health monitoring (extracted from Application)
+	healthMonitor *health.GatewayHealthMonitor
 
-	// Grace period for offline status - avoid oscillation for temporary errors
-	errorGracePeriod   time.Duration // Waiting time before marking as offline
-	firstErrorTime     time.Time     // First error in the current sequence
-	statusSetToOffline bool          // Flag to avoid repeatedly setting offline status
+	// Performance tracking (using PerformanceTracker)
+	performanceTracker *metrics.PerformanceTracker
 
-	// Performance tracking for cleaner output
-	lastSummaryTime time.Time
-	successfulReads int
-	errorReads      int
+	// Prometheus metrics (optional, enabled via config)
+	prometheusMetrics *metrics.PrometheusMetrics
 
 	// Last publish tracking for forced republish
 	lastPublishTime map[string]time.Time // Track last publish time per sensor
@@ -85,23 +83,28 @@ func NewApplication(configPath string) (*Application, error) {
 	// Create publisher for Home Assistant
 	publisher := mqtt.NewPublisher(&cfg.MQTT, &cfg.HomeAssistant)
 
+	// Create performance tracker with configured interval
+	summaryInterval := time.Duration(cfg.Application.PerformanceSummaryInterval) * time.Second
+	performanceTracker := metrics.NewPerformanceTracker(summaryInterval)
+
+	// Create Prometheus metrics if enabled
+	var prometheusMetrics *metrics.PrometheusMetrics
+	if cfg.Application.MetricsPort > 0 {
+		prometheusMetrics = metrics.NewPrometheusMetrics()
+		logger.LogInfo("✅ Prometheus metrics enabled on port %d", cfg.Application.MetricsPort)
+	}
+
 	app := &Application{
 		config:    cfg,
 		gateway:   gatewayInstance,
 		executor:  executor,
 		publisher: publisher,
-		// Initialize gateway status tracking
-		consecutiveErrors: 0,
-		isGatewayOnline:   true,
-		lastErrorTime:     time.Time{},
-		// Initialize grace period tracking - 15 seconds grace before marking offline
-		errorGracePeriod:   15 * time.Second,
-		firstErrorTime:     time.Time{},
-		statusSetToOffline: false,
+		// Initialize health monitoring with configured grace period
+		healthMonitor: health.NewGatewayHealthMonitor(time.Duration(cfg.Application.ErrorGracePeriod) * time.Second),
 		// Initialize performance tracking
-		lastSummaryTime: time.Now(),
-		successfulReads: 0,
-		errorReads:      0,
+		performanceTracker: performanceTracker,
+		// Initialize Prometheus metrics (if enabled)
+		prometheusMetrics: prometheusMetrics,
 
 		// Initialize last publish tracking
 		lastPublishTime: make(map[string]time.Time),
@@ -176,6 +179,11 @@ func (app *Application) Start(ctx context.Context) error {
 		}
 	}
 
+	// Set initial gateway status in Prometheus (if enabled)
+	if app.prometheusMetrics != nil {
+		app.prometheusMetrics.SetGatewayStatus(true) // Start as online
+	}
+
 	// Start polling loop (unified for all register types)
 	go app.mainLoopNormalRegisters(ctx)
 
@@ -190,6 +198,27 @@ func (app *Application) Start(ctx context.Context) error {
 
 	// Start forced republish loop for energy sensors
 	go app.forcedRepublishLoop(ctx)
+
+	// Start Prometheus metrics server (if enabled)
+	if app.config.Application.MetricsPort > 0 && app.prometheusMetrics != nil {
+		go func() {
+			if err := app.prometheusMetrics.StartMetricsServer(app.config.Application.MetricsPort); err != nil {
+				logger.LogError("❌ Metrics server error: %v", err)
+			}
+		}()
+		logger.LogInfo("🔢 Metrics available at http://localhost:%d/metrics", app.config.Application.MetricsPort)
+	}
+
+	// Start health check server (if enabled)
+	if app.config.Application.HealthCheckPort > 0 {
+		healthHandler := httpHealth.NewHealthHandler(app.healthMonitor, "1.0.0")
+		go func() {
+			if err := httpHealth.StartHealthServer(healthHandler, app.config.Application.HealthCheckPort); err != nil {
+				logger.LogError("❌ Health server error: %v", err)
+			}
+		}()
+		logger.LogInfo("🏥 Health check available at http://localhost:%d/health", app.config.Application.HealthCheckPort)
+	}
 
 	logger.LogInfo("✅ MQTT-Modbus Bridge started successfully")
 	logger.LogInfo("🔇 Verbose logging reduced - Summary reports every 30 seconds")
@@ -250,7 +279,13 @@ func (app *Application) executeAllStrategies(ctx context.Context) {
 	responseTime := time.Since(startTime)
 
 	if err != nil {
-		app.errorReads++
+		app.performanceTracker.RecordError()
+
+		// Record Prometheus metrics (if enabled)
+		if app.prometheusMetrics != nil {
+			app.prometheusMetrics.IncrementModbusErrors()
+		}
+
 		app.handleGatewayError(ctx)
 		logger.LogError("❌ Strategy execution error: %v", err)
 
@@ -281,18 +316,21 @@ func (app *Application) executeAllStrategies(ctx context.Context) {
 	}
 
 	// Success - publish all results
-	app.successfulReads += len(results)
+	app.performanceTracker.RecordSuccessBatch(len(results))
+
+	// Record Prometheus metrics (if enabled)
+	if app.prometheusMetrics != nil {
+		app.prometheusMetrics.IncrementModbusReads()
+		app.prometheusMetrics.ObserveModbusReadDuration(responseTime)
+	}
+
 	app.handleGatewaySuccess(ctx)
 
-	// Only show detailed logs every 30 seconds
-	shouldLog := time.Since(app.lastSummaryTime) >= 30*time.Second
+	// Print summary if interval has passed
+	app.performanceTracker.PrintSummaryIfNeeded()
 
-	if shouldLog {
-		logger.LogInfo("📊 Summary - Success: %d, Errors: %d, Last 30s", app.successfulReads, app.errorReads)
-		app.lastSummaryTime = time.Now()
-		app.successfulReads = 0
-		app.errorReads = 0
-	}
+	// Check if we should show detailed logs
+	shouldLog := app.performanceTracker.ShouldPrintSummary()
 
 	// Publish each result to Home Assistant
 	for key, result := range results {
@@ -301,9 +339,17 @@ func (app *Application) executeAllStrategies(ctx context.Context) {
 		// Publish to Home Assistant
 		if pubErr := app.publisher.PublishSensorState(ctx, result); pubErr != nil {
 			logger.LogError("⚠️ Error publishing sensor state for %s: %v", key, pubErr)
+			// Record MQTT error (if metrics enabled)
+			if app.prometheusMetrics != nil {
+				app.prometheusMetrics.IncrementMQTTErrors()
+			}
 		} else {
 			// Update last publish time for successful publications
 			app.updateLastPublishTime(key)
+			// Record MQTT success (if metrics enabled)
+			if app.prometheusMetrics != nil {
+				app.prometheusMetrics.IncrementMQTTPublishes()
+			}
 		}
 	}
 
@@ -314,30 +360,34 @@ func (app *Application) executeAllStrategies(ctx context.Context) {
 
 // handleGatewayError manages error counting and offline status with grace period
 func (app *Application) handleGatewayError(ctx context.Context) {
-	app.consecutiveErrors++
-	app.lastErrorTime = time.Now()
+	// Record error and check if should mark offline
+	shouldMarkOffline := app.healthMonitor.RecordError()
 
-	// If this is the first error in the sequence, record the time
-	if app.firstErrorTime.IsZero() {
-		app.firstErrorTime = time.Now()
-		logger.LogWarn("⚠️ First error detected, starting grace period of %.0f seconds", app.errorGracePeriod.Seconds())
+	// If this is first error, log grace period start
+	if app.healthMonitor.GetConsecutiveErrors() == 1 {
+		logger.LogWarn("⚠️ First error detected, starting grace period")
 	}
 
 	// Check if we're still in grace period
-	timeSinceFirstError := time.Since(app.firstErrorTime)
-	if timeSinceFirstError < app.errorGracePeriod {
+	if app.healthMonitor.IsInGracePeriod() {
 		// Still in grace period - don't change status to offline yet
-		logger.LogDebug("🕐 Error %d in grace period (%.1fs/%.0fs) - keeping status online",
-			app.consecutiveErrors, timeSinceFirstError.Seconds(), app.errorGracePeriod.Seconds())
+		logger.LogDebug("🕐 Error %d in grace period (%.1fs elapsed) - keeping status online",
+			app.healthMonitor.GetConsecutiveErrors(),
+			app.healthMonitor.GetTimeSinceFirstError().Seconds())
 		return
 	}
 
-	// Grace period expired - set status to offline if not already done
-	if app.isGatewayOnline && !app.statusSetToOffline {
-		app.isGatewayOnline = false
-		app.statusSetToOffline = true
+	// Grace period expired - set status to offline if needed
+	if shouldMarkOffline && app.healthMonitor.IsOnline() {
+		app.healthMonitor.MarkOffline()
 		logger.LogError("🔴 Grace period expired - App marked as OFFLINE after %d errors over %.1f seconds",
-			app.consecutiveErrors, timeSinceFirstError.Seconds())
+			app.healthMonitor.GetConsecutiveErrors(),
+			app.healthMonitor.GetTimeSinceFirstError().Seconds())
+
+		// Update Prometheus metrics (if enabled)
+		if app.prometheusMetrics != nil {
+			app.prometheusMetrics.SetGatewayStatus(false)
+		}
 
 		// Publish offline status to ensure MQTT broker has correct state
 		if err := app.publisher.PublishStatusOffline(ctx); err != nil {
@@ -349,14 +399,17 @@ func (app *Application) handleGatewayError(ctx context.Context) {
 // handleGatewaySuccess resets error counter and changes status to online when functionality resumes
 func (app *Application) handleGatewaySuccess(ctx context.Context) {
 	// Reset error counter and grace period tracking
-	app.consecutiveErrors = 0
-	app.firstErrorTime = time.Time{}
-	app.statusSetToOffline = false
+	app.healthMonitor.RecordSuccess()
 
 	// If gateway was offline, mark it back online
-	if !app.isGatewayOnline {
-		app.isGatewayOnline = true
+	if !app.healthMonitor.IsOnline() {
+		app.healthMonitor.MarkOnline()
 		logger.LogInfo("🟢 App marked as ONLINE - functionality restored")
+
+		// Update Prometheus metrics (if enabled)
+		if app.prometheusMetrics != nil {
+			app.prometheusMetrics.SetGatewayStatus(true)
+		}
 
 		// Publish online status
 		if err := app.publisher.PublishStatusOnline(ctx); err != nil {
@@ -634,7 +687,7 @@ func (app *Application) heartbeatLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			// Only send heartbeat if we're currently marked as online
-			if app.isGatewayOnline {
+			if app.healthMonitor.IsOnline() {
 				if err := app.publisher.PublishStatusOnline(ctx); err != nil {
 					logger.LogError("⚠️ Heartbeat failed: %v", err)
 				} else {
