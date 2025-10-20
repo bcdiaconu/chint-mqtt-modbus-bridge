@@ -136,10 +136,21 @@ func (pm *PrometheusMetrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // StartMetricsServer starts an HTTP server on the given port to expose metrics
+// Implements secure defaults with timeouts to prevent slowloris attacks
 func (pm *PrometheusMetrics) StartMetricsServer(port int) error {
 	http.Handle("/metrics", pm)
 	addr := fmt.Sprintf(":%d", port)
-	return http.ListenAndServe(addr, nil)
+
+	// Create server with secure timeout settings (gosec G114)
+	server := &http.Server{
+		Addr:              addr,
+		ReadTimeout:       15 * time.Second, // Max time to read request
+		ReadHeaderTimeout: 10 * time.Second, // Max time to read headers
+		WriteTimeout:      15 * time.Second, // Max time to write response
+		IdleTimeout:       60 * time.Second, // Max time for keep-alive connections
+	}
+
+	return server.ListenAndServe()
 }
 
 // GetStats returns current metric values

@@ -160,5 +160,15 @@ func StartHealthServer(handler *HealthHandler, port int) error {
 	})
 
 	addr := fmt.Sprintf(":%d", port)
-	return http.ListenAndServe(addr, nil)
+
+	// Create server with secure timeout settings (gosec G114)
+	server := &http.Server{
+		Addr:              addr,
+		ReadTimeout:       15 * time.Second, // Max time to read request
+		ReadHeaderTimeout: 10 * time.Second, // Max time to read headers
+		WriteTimeout:      15 * time.Second, // Max time to write response
+		IdleTimeout:       60 * time.Second, // Max time for keep-alive connections
+	}
+
+	return server.ListenAndServe()
 }
