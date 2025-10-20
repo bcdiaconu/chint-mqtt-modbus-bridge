@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/diagnostics"
+	"mqtt-modbus-bridge/pkg/errors"
 	"mqtt-modbus-bridge/pkg/gateway"
 	"mqtt-modbus-bridge/pkg/health"
 	httpHealth "mqtt-modbus-bridge/pkg/http"
@@ -296,20 +297,45 @@ func (app *Application) executeAllStrategies(ctx context.Context) {
 		}
 
 		app.handleGatewayError(ctx)
-		logger.LogError("❌ Strategy execution error: %v", err)
+
+		// Handle typed errors with specific logging and diagnostics
+		var diagCode int
+		var errorMsg string
+
+		switch e := err.(type) {
+		case *errors.ModbusError:
+			logger.LogError("❌ Modbus error: %v (Device: %s, Slave: %d, Func: 0x%02X, Addr: 0x%04X)",
+				e.Err, e.DeviceID, e.SlaveID, e.FunctionCode, e.Address)
+			diagCode = DiagnosticModbusError
+			errorMsg = fmt.Sprintf("Modbus error on device '%s': %v", e.DeviceID, e.Err)
+
+		case *errors.MQTTError:
+			logger.LogError("❌ MQTT error: %v (Broker: %s, Topic: %s)", e.Err, e.Broker, e.Topic)
+			diagCode = DiagnosticMQTTDisconnected
+			errorMsg = fmt.Sprintf("MQTT error: %v", e.Err)
+
+		case *errors.GatewayError:
+			logger.LogError("❌ Gateway error: %v (MAC: %s)", e.Err, e.GatewayMAC)
+			diagCode = DiagnosticGatewayError
+			errorMsg = fmt.Sprintf("Gateway error: %v", e.Err)
+
+		default:
+			logger.LogError("❌ Strategy execution error: %v", err)
+			diagCode = DiagnosticModbusError
+			errorMsg = fmt.Sprintf("Strategy execution error: %v", err)
+		}
 
 		// Update metrics for all devices (error) - if diagnostic manager is enabled
 		if app.diagnosticManager != nil {
 			for deviceID := range app.config.Devices {
 				if app.config.Devices[deviceID].Metadata.Enabled {
-					app.diagnosticManager.RecordError(deviceID, fmt.Sprintf("Strategy execution error: %v", err))
+					app.diagnosticManager.RecordError(deviceID, errorMsg)
 				}
 			}
 		}
 
-		// Publish diagnostic
-		errorMsg := fmt.Sprintf("Strategy execution error: %v", err)
-		if diagErr := app.publisher.PublishDiagnostic(ctx, DiagnosticModbusError, errorMsg); diagErr != nil {
+		// Publish diagnostic with appropriate error code
+		if diagErr := app.publisher.PublishDiagnostic(ctx, diagCode, errorMsg); diagErr != nil {
 			logger.LogError("⚠️ Error publishing diagnostic: %v", diagErr)
 		}
 		return
