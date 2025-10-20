@@ -71,6 +71,11 @@ func NewApplication(configPath string) (*Application, error) {
 	logger.GlobalLogging = &cfg.Logging
 	logger.LogStartup("🔧 Logging initialized with level: %s", cfg.Logging.Level)
 
+	// Initialize topics package with discovery prefix from configuration
+	// This must be done early so all topic construction uses the correct prefix
+	topics.Initialize(cfg.HomeAssistant.DiscoveryPrefix)
+	logger.LogDebug("📍 Topics package initialized with discovery prefix: %s", cfg.HomeAssistant.DiscoveryPrefix)
+
 	// Create gateway
 	gatewayInstance := gateway.NewUSRGateway(&cfg.MQTT)
 
@@ -406,8 +411,8 @@ func (app *Application) publishDiscoveryConfigsV21(ctx context.Context) error {
 		// Add register_groups sensors
 		for _, group := range device.Modbus.RegisterGroups {
 			for _, register := range group.Registers {
-				// Construct the full HA topic path automatically with discovery prefix
-				topic := topics.ConstructHATopic(app.config.HomeAssistant.DiscoveryPrefix, haDeviceID, register.Key, register.DeviceClass)
+				// Construct the full HA topic path automatically
+				topic := topics.ConstructHATopic(haDeviceID, register.Key, register.DeviceClass)
 
 				result := &modbus.CommandResult{
 					Strategy:    register.Key,
@@ -425,8 +430,8 @@ func (app *Application) publishDiscoveryConfigsV21(ctx context.Context) error {
 
 		// Add calculated_values sensors
 		for _, calc := range device.CalculatedValues {
-			// Construct the full HA topic path automatically with discovery prefix
-			topic := topics.ConstructHATopic(app.config.HomeAssistant.DiscoveryPrefix, haDeviceID, calc.Key, calc.DeviceClass)
+			// Construct the full HA topic path automatically
+			topic := topics.ConstructHATopic(haDeviceID, calc.Key, calc.DeviceClass)
 
 			result := &modbus.CommandResult{
 				Strategy:    calc.Key,

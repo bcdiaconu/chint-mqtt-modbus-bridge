@@ -7,6 +7,7 @@ import (
 	"math"
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/modbus"
+	"mqtt-modbus-bridge/pkg/topics"
 	"sync"
 	"time"
 
@@ -16,7 +17,6 @@ import (
 // EnergyTopic handles energy sensor publishing (total, imported, exported)
 type EnergyTopic struct {
 	config        *config.HAConfig
-	factory       *TopicFactory
 	lastValues    map[string]float64   // Store last valid values by sensor name
 	lastTimestamp map[string]time.Time // Store last read timestamps by sensor name
 	mutex         sync.RWMutex         // Protect concurrent access to maps
@@ -26,7 +26,6 @@ type EnergyTopic struct {
 func NewEnergyTopic(config *config.HAConfig) *EnergyTopic {
 	return &EnergyTopic{
 		config:        config,
-		factory:       NewTopicFactory(config.DiscoveryPrefix),
 		lastValues:    make(map[string]float64),
 		lastTimestamp: make(map[string]time.Time),
 	}
@@ -54,10 +53,10 @@ func (e *EnergyTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, 
 		}
 	}
 
-	// Build topics using factory
+	// Build topics using topics package
 	deviceID := ExtractDeviceID(&device)
-	discoveryTopic := e.factory.BuildDiscoveryTopic(deviceID, sensorKey)
-	uniqueID := e.factory.BuildUniqueID(deviceID, sensorKey)
+	discoveryTopic := topics.BuildDiscoveryTopic(deviceID, sensorKey)
+	uniqueID := topics.BuildUniqueID(deviceID, sensorKey)
 
 	// Configuration for the energy sensor
 	config := SensorConfig{
@@ -69,7 +68,7 @@ func (e *EnergyTopic) PublishDiscovery(ctx context.Context, client mqtt.Client, 
 		StateClass:          result.StateClass,
 		Device:              device,
 		ValueTemplate:       "{{ value_json.value | round(3) }}",
-		AvailabilityTopic:   e.config.StatusTopic,
+		AvailabilityTopic:   topics.BuildStatusTopic(config.BridgeDeviceID),
 		PayloadAvailable:    "online",
 		PayloadNotAvailable: "offline",
 	}

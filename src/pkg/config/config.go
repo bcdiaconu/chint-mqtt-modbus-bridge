@@ -52,12 +52,13 @@ type GatewayConfig struct {
 }
 
 // HAConfig contains Home Assistant MQTT Discovery settings
-// Global settings for the bridge (discovery prefix and bridge-level topics)
+// Global settings for the bridge (discovery prefix and device diagnostics config)
 // Per-device Home Assistant information is configured in Device struct
+//
+// Note: Status and diagnostic topics are NOT part of Home Assistant config
+// They are constructed automatically in the topics package using BuildStatusTopic() and BuildDiagnosticDataTopic()
 type HAConfig struct {
 	DiscoveryPrefix   string                  `yaml:"discovery_prefix"`   // HA MQTT discovery prefix (e.g., "homeassistant")
-	StatusTopic       string                  `yaml:"status_topic"`       // Bridge availability topic
-	DiagnosticTopic   string                  `yaml:"diagnostic_topic"`   // Bridge diagnostics topic
 	DeviceDiagnostics DeviceDiagnosticsConfig `yaml:"device_diagnostics"` // Per-device diagnostic configuration
 
 	// DEPRECATED: These fields are now per-device in Device struct
@@ -255,12 +256,9 @@ func (c *Config) Validate() error {
 	if c.Modbus.EnergyDelay < 0 {
 		return fmt.Errorf("modbus.energy_delay must be non-negative")
 	}
-	if c.HomeAssistant.StatusTopic == "" {
-		return fmt.Errorf("homeassistant.status_topic is not specified")
-	}
-	if c.HomeAssistant.DiagnosticTopic == "" {
-		return fmt.Errorf("homeassistant.diagnostic_topic is not specified")
-	}
+
+	// Note: StatusTopic and DiagnosticTopic are now auto-generated from BridgeDeviceID
+	// No validation needed - they are constructed via GetStatusTopic() and GetDiagnosticTopic()
 
 	// Version-specific validation
 	if c.Version == "2.1" {
@@ -277,7 +275,7 @@ func (c *Config) Validate() error {
 
 			// Convert devices to flat groups for backward compatibility
 			if len(c.RegisterGroups) == 0 {
-				c.RegisterGroups = ConvertDevicesToGroups(c.Devices, c.HomeAssistant.DiscoveryPrefix)
+				c.RegisterGroups = ConvertDevicesToGroups(c.Devices)
 				logger.LogInfo("✅ Converted %d devices to %d register groups",
 					len(c.Devices), len(c.RegisterGroups))
 			}
@@ -295,7 +293,7 @@ func (c *Config) Validate() error {
 		if len(c.Registers) == 0 {
 			// For V2.1 with devices, use device-aware conversion that creates unique keys
 			if len(c.Devices) > 0 {
-				c.Registers = GetAllRegistersFromDevices(c.Devices, c.HomeAssistant.DiscoveryPrefix)
+				c.Registers = GetAllRegistersFromDevices(c.Devices)
 				logger.LogInfo("✅ Converted %d devices to %d individual registers with unique keys",
 					len(c.Devices), len(c.Registers))
 			} else {

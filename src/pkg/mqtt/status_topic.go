@@ -6,6 +6,7 @@ import (
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/logger"
 	"mqtt-modbus-bridge/pkg/modbus"
+	"mqtt-modbus-bridge/pkg/topics"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
@@ -48,7 +49,7 @@ func (s *StatusTopic) PublishState(ctx context.Context, client mqtt.Client, resu
 		payload = "offline"
 	}
 
-	token := client.Publish(s.config.StatusTopic, 0, true, payload)
+	token := client.Publish(topics.BuildStatusTopic(config.BridgeDeviceID), 0, true, payload)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -81,7 +82,7 @@ func (s *StatusTopic) PublishOnline(ctx context.Context, client mqtt.Client) err
 		return fmt.Errorf("client not connected")
 	}
 
-	token := client.Publish(s.config.StatusTopic, 0, true, "online")
+	token := client.Publish(topics.BuildStatusTopic(config.BridgeDeviceID), 0, true, "online")
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -101,7 +102,7 @@ func (s *StatusTopic) PublishOffline(ctx context.Context, client mqtt.Client) er
 		return fmt.Errorf("client not connected")
 	}
 
-	token := client.Publish(s.config.StatusTopic, 0, true, "offline")
+	token := client.Publish(topics.BuildStatusTopic(config.BridgeDeviceID), 0, true, "offline")
 	select {
 	case <-ctx.Done():
 		return ctx.Err()

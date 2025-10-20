@@ -7,6 +7,7 @@ import (
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/logger"
 	"mqtt-modbus-bridge/pkg/modbus"
+	"mqtt-modbus-bridge/pkg/topics"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -15,15 +16,13 @@ import (
 // DiagnosticTopic handles Home Assistant diagnostic sensor publishing
 // DiagnosticTopic handles diagnostic-related publishing
 type DiagnosticTopic struct {
-	config  *config.HAConfig
-	factory *TopicFactory
+	config *config.HAConfig
 }
 
 // NewDiagnosticTopic creates a new diagnostic topic handler
 func NewDiagnosticTopic(config *config.HAConfig) *DiagnosticTopic {
 	return &DiagnosticTopic{
-		config:  config,
-		factory: NewTopicFactory(config.DiscoveryPrefix),
+		config: config,
 	}
 }
 
@@ -51,12 +50,12 @@ func (d *DiagnosticTopic) PublishDiscovery(ctx context.Context, client mqtt.Clie
 	logger.LogDebug("🔍 Bridge device info: Name='%s', ID='%s', Manufacturer='%s', Model='%s'",
 		device.Name, device.Identifiers[0], device.Manufacturer, device.Model)
 
-	// Build topics using factory
+	// Build topics using topics package
 	deviceID := ExtractDeviceID(&device)
 	logger.LogDebug("🔍 Extracted device ID for diagnostic: '%s' (len=%d)", deviceID, len(deviceID))
-	discoveryTopic := d.factory.BuildDiagnosticDiscoveryTopic(deviceID)
-	stateTopic := d.factory.BuildDiagnosticStateTopic(deviceID)
-	uniqueID := d.factory.BuildDiagnosticUniqueID(deviceID)
+	discoveryTopic := topics.BuildDiagnosticDiscoveryTopic(deviceID)
+	stateTopic := topics.BuildDiagnosticStateTopic(deviceID)
+	uniqueID := topics.BuildDiagnosticUniqueID(deviceID)
 
 	// Configuration for the diagnostic sensor
 	config := SensorConfig{
@@ -68,7 +67,7 @@ func (d *DiagnosticTopic) PublishDiscovery(ctx context.Context, client mqtt.Clie
 		StateClass:             "",
 		Device:                 device,
 		ValueTemplate:          "{{ value_json.message }}",
-		AvailabilityTopic:      d.config.StatusTopic,
+		AvailabilityTopic:      topics.BuildStatusTopic(config.BridgeDeviceID),
 		PayloadAvailable:       "online",
 		PayloadNotAvailable:    "offline",
 		AvailabilityMode:       "latest",
@@ -117,7 +116,7 @@ func (d *DiagnosticTopic) PublishState(ctx context.Context, client mqtt.Client, 
 		return fmt.Errorf("error marshaling diagnostic: %w", err)
 	}
 
-	token := client.Publish(d.config.DiagnosticTopic, 0, false, payload)
+	token := client.Publish(topics.BuildDiagnosticDataTopic(config.BridgeDeviceID), 0, false, payload)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -169,7 +168,7 @@ func (d *DiagnosticTopic) PublishDiagnostic(ctx context.Context, client mqtt.Cli
 
 	// Publish to Home Assistant state topic using bridge device ID constant
 	bridgeDeviceID := config.BridgeDeviceID
-	stateTopic := d.factory.BuildDiagnosticStateTopic(bridgeDeviceID)
+	stateTopic := topics.BuildDiagnosticStateTopic(bridgeDeviceID)
 
 	logger.LogDebug("🔧 📤 Publishing diagnostic to '%s': %s", stateTopic, message)
 

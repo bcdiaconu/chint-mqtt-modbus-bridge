@@ -260,7 +260,7 @@ func ValidateDevices(devices map[string]Device) error {
 }
 
 // ConvertDevicesToGroups converts device-based config (V2.1) to flat groups (V2.0) for backward compatibility
-func ConvertDevicesToGroups(devices map[string]Device, discoveryPrefix string) map[string]RegisterGroup {
+func ConvertDevicesToGroups(devices map[string]Device) map[string]RegisterGroup {
 	groups := make(map[string]RegisterGroup)
 
 	for deviceKey, device := range devices {
@@ -289,8 +289,8 @@ func ConvertDevicesToGroups(devices map[string]Device, discoveryPrefix string) m
 			// Construct HATopic for each register if not provided
 			for i := range group.Registers {
 				if group.Registers[i].HATopic == "" {
-					// Auto-construct topic with discovery prefix
-					group.Registers[i].HATopic = topics.ConstructHATopic(discoveryPrefix, haDeviceID, group.Registers[i].Key, group.Registers[i].DeviceClass)
+					// Auto-construct topic (discovery prefix is set in topics package)
+					group.Registers[i].HATopic = topics.ConstructHATopic(haDeviceID, group.Registers[i].Key, group.Registers[i].DeviceClass)
 					logger.LogDebug("Auto-constructed topic for %s/%s: %s",
 						deviceKey, group.Registers[i].Key, group.Registers[i].HATopic)
 				}
@@ -308,7 +308,7 @@ func ConvertDevicesToGroups(devices map[string]Device, discoveryPrefix string) m
 
 // GetAllRegisters extracts all registers from all devices for backward compatibility
 // Creates unique keys by combining device key with register key (deviceKey_registerKey)
-func GetAllRegistersFromDevices(devices map[string]Device, discoveryPrefix string) map[string]Register {
+func GetAllRegistersFromDevices(devices map[string]Device) map[string]Register {
 	registers := make(map[string]Register)
 
 	for deviceKey, device := range devices {
@@ -349,10 +349,8 @@ func GetAllRegistersFromDevices(devices map[string]Device, discoveryPrefix strin
 				// Construct HATopic if not provided
 				haTopic := reg.HATopic
 				if haTopic == "" {
-					haTopic = topics.ConstructHATopic(discoveryPrefix, haDeviceID, reg.Key, reg.DeviceClass)
-				}
-
-				// Create pointers for optional fields (only if non-zero)
+					haTopic = topics.ConstructHATopic(haDeviceID, reg.Key, reg.DeviceClass)
+				} // Create pointers for optional fields (only if non-zero)
 				var minPtr, maxPtr, maxKwhPtr *float64
 				if reg.Min != 0 {
 					minPtr = &reg.Min
@@ -396,10 +394,8 @@ func GetAllRegistersFromDevices(devices map[string]Device, discoveryPrefix strin
 
 		// Process calculated values for this device
 		for _, calc := range device.CalculatedValues {
-			// Construct HATopic with discovery prefix
-			haTopic := topics.ConstructHATopic(discoveryPrefix, haDeviceID, calc.Key, calc.DeviceClass)
-
-			// Create pointers for optional fields
+			// Construct HATopic (discovery prefix is set in topics package)
+			haTopic := topics.ConstructHATopic(haDeviceID, calc.Key, calc.DeviceClass) // Create pointers for optional fields
 			var minPtr, maxPtr *float64
 			if calc.Min != nil {
 				minPtr = calc.Min

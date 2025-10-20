@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/logger"
+	"mqtt-modbus-bridge/pkg/topics"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -13,15 +14,13 @@ import (
 
 // DeviceDiagnosticTopic handles per-device diagnostic sensor publishing
 type DeviceDiagnosticTopic struct {
-	config  *config.HAConfig
-	factory *TopicFactory
+	config *config.HAConfig
 }
 
 // NewDeviceDiagnosticTopic creates a new device diagnostic topic handler
 func NewDeviceDiagnosticTopic(config *config.HAConfig) *DeviceDiagnosticTopic {
 	return &DeviceDiagnosticTopic{
-		config:  config,
-		factory: NewTopicFactory(config.DiscoveryPrefix),
+		config: config,
 	}
 }
 
@@ -61,9 +60,9 @@ func (d *DeviceDiagnosticTopic) PublishDiscovery(ctx context.Context, client mqt
 	}
 
 	// Build topics
-	discoveryTopic := d.factory.BuildDeviceDiagnosticDiscoveryTopic(deviceID)
-	stateTopic := d.factory.BuildDeviceDiagnosticStateTopic(deviceID)
-	uniqueID := d.factory.BuildDeviceDiagnosticUniqueID(deviceID)
+	discoveryTopic := topics.BuildDeviceDiagnosticDiscoveryTopic(deviceID)
+	stateTopic := topics.BuildDeviceDiagnosticStateTopic(deviceID)
+	uniqueID := topics.BuildDeviceDiagnosticUniqueID(deviceID)
 
 	// Configuration for the device diagnostic sensor
 	sensorConfig := SensorConfig{
@@ -73,7 +72,7 @@ func (d *DeviceDiagnosticTopic) PublishDiscovery(ctx context.Context, client mqt
 		DeviceClass:            "enum",
 		Device:                 *deviceInfo,
 		ValueTemplate:          "{{ value_json.state }}",
-		AvailabilityTopic:      d.config.StatusTopic,
+		AvailabilityTopic:      topics.BuildStatusTopic(config.BridgeDeviceID),
 		AvailabilityMode:       "latest",
 		PayloadAvailable:       "online",
 		PayloadNotAvailable:    "offline",
@@ -146,7 +145,7 @@ func (d *DeviceDiagnosticTopic) PublishState(ctx context.Context, client mqtt.Cl
 		return fmt.Errorf("error marshaling device diagnostic state: %w", err)
 	}
 
-	stateTopic := d.factory.BuildDeviceDiagnosticStateTopic(deviceID)
+	stateTopic := topics.BuildDeviceDiagnosticStateTopic(deviceID)
 	token := client.Publish(stateTopic, 0, false, payload)
 
 	select {

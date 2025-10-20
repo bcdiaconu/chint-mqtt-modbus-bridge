@@ -86,7 +86,7 @@ func (e *StrategyExecutor) RegisterFromDevices(devices map[string]config.Device)
 					ApplyAbs:    groupReg.ApplyAbs, // Copy apply_abs flag
 					DeviceClass: groupReg.DeviceClass,
 					StateClass:  groupReg.StateClass,
-					HATopic:     topics.ConstructHATopic(e.discoveryPrefix, deviceKey, groupReg.Key, groupReg.DeviceClass),
+					HATopic:     topics.ConstructHATopic(deviceKey, groupReg.Key, groupReg.DeviceClass),
 				}
 
 				regKey := fmt.Sprintf("%s_%s", deviceKey, groupReg.Key)
@@ -127,7 +127,7 @@ func (e *StrategyExecutor) RegisterFromDevices(devices map[string]config.Device)
 				ScaleFactor: scaleFactor,
 				DeviceClass: calc.DeviceClass,
 				StateClass:  calc.StateClass,
-				HATopic:     topics.ConstructHATopic(e.discoveryPrefix, deviceKey, calc.Key, calc.DeviceClass),
+				HATopic:     topics.ConstructHATopic(deviceKey, calc.Key, calc.DeviceClass),
 			}
 
 			calcKey := fmt.Sprintf("%s_%s", deviceKey, calc.Key)

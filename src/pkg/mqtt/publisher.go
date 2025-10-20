@@ -6,6 +6,7 @@ import (
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/logger"
 	"mqtt-modbus-bridge/pkg/modbus"
+	"mqtt-modbus-bridge/pkg/topics"
 	"time"
 
 	paho "github.com/eclipse/paho.mqtt.golang"
@@ -38,7 +39,7 @@ func NewPublisher(cfg *config.MQTTConfig, haCfg *config.HAConfig) *Publisher {
 	opts.SetPingTimeout(10 * time.Second)
 
 	// Set Last Will and Testament to automatically mark as offline on disconnect
-	opts.SetWill(haCfg.StatusTopic, "offline", 1, true)
+	opts.SetWill(topics.BuildStatusTopic(config.BridgeDeviceID), "offline", 1, true)
 
 	publisher := &Publisher{
 		config:     haCfg,
@@ -50,7 +51,7 @@ func NewPublisher(cfg *config.MQTTConfig, haCfg *config.HAConfig) *Publisher {
 	opts.SetOnConnectHandler(func(client paho.Client) {
 		logger.LogInfo("HA Publisher connected to MQTT broker")
 		// Immediately publish online status when connected
-		if token := client.Publish(haCfg.StatusTopic, 1, true, "online"); token.Wait() && token.Error() != nil {
+		if token := client.Publish(topics.BuildStatusTopic(config.BridgeDeviceID), 1, true, "online"); token.Wait() && token.Error() != nil {
 			logger.LogWarn("Error publishing online status on connect: %v", token.Error())
 		}
 	})
@@ -273,6 +274,15 @@ type DeviceInfo struct {
 	Identifiers  []string `json:"identifiers"`
 	Manufacturer string   `json:"manufacturer"`
 	Model        string   `json:"model"`
+}
+
+// ExtractDeviceID extracts the device ID from a DeviceInfo
+// Returns the first identifier or empty string if none available
+func ExtractDeviceID(deviceInfo *DeviceInfo) string {
+	if deviceInfo == nil || len(deviceInfo.Identifiers) == 0 {
+		return ""
+	}
+	return deviceInfo.Identifiers[0]
 }
 
 // SensorState state of a sensor

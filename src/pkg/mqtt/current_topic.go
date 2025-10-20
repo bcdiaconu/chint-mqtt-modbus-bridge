@@ -7,6 +7,7 @@ import (
 	"math"
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/modbus"
+	"mqtt-modbus-bridge/pkg/topics"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -14,15 +15,13 @@ import (
 
 // CurrentTopic handles current sensor publishing
 type CurrentTopic struct {
-	config  *config.HAConfig
-	factory *TopicFactory
+	config *config.HAConfig
 }
 
 // NewCurrentTopic creates a new current topic handler
 func NewCurrentTopic(config *config.HAConfig) *CurrentTopic {
 	return &CurrentTopic{
-		config:  config,
-		factory: NewTopicFactory(config.DiscoveryPrefix),
+		config: config,
 	}
 }
 
@@ -48,13 +47,13 @@ func (c *CurrentTopic) PublishDiscovery(ctx context.Context, client mqtt.Client,
 		}
 	}
 
-	// Build topics using factory
+	// Build topics directly using topics package
 	deviceID := ExtractDeviceID(&device)
-	discoveryTopic := c.factory.BuildDiscoveryTopic(deviceID, sensorKey)
-	uniqueID := c.factory.BuildUniqueID(deviceID, sensorKey)
+	discoveryTopic := topics.BuildDiscoveryTopic(deviceID, sensorKey)
+	uniqueID := topics.BuildUniqueID(deviceID, sensorKey)
 
 	// Configuration for the current sensor
-	config := SensorConfig{
+	sensorConfig := SensorConfig{
 		Name:                result.Name,
 		UniqueID:            uniqueID,
 		StateTopic:          result.Topic,
@@ -63,13 +62,13 @@ func (c *CurrentTopic) PublishDiscovery(ctx context.Context, client mqtt.Client,
 		StateClass:          result.StateClass,
 		Device:              device,
 		ValueTemplate:       "{{ value_json.value }}",
-		AvailabilityTopic:   c.config.StatusTopic,
+		AvailabilityTopic:   topics.BuildStatusTopic(config.BridgeDeviceID),
 		PayloadAvailable:    "online",
 		PayloadNotAvailable: "offline",
 	}
 
 	// Serialize configuration
-	configJSON, err := json.Marshal(config)
+	configJSON, err := json.Marshal(sensorConfig)
 	if err != nil {
 		return fmt.Errorf("error serializing current configuration: %w", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"math"
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/modbus"
+	"mqtt-modbus-bridge/pkg/topics"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -14,15 +15,13 @@ import (
 
 // FrequencyTopic handles frequency sensor publishing
 type FrequencyTopic struct {
-	config  *config.HAConfig
-	factory *TopicFactory
+	config *config.HAConfig
 }
 
 // NewFrequencyTopic creates a new frequency topic handler
 func NewFrequencyTopic(config *config.HAConfig) *FrequencyTopic {
 	return &FrequencyTopic{
-		config:  config,
-		factory: NewTopicFactory(config.DiscoveryPrefix),
+		config: config,
 	}
 }
 
@@ -48,10 +47,10 @@ func (f *FrequencyTopic) PublishDiscovery(ctx context.Context, client mqtt.Clien
 		}
 	}
 
-	// Build topics using factory
+	// Build topics using topics package
 	deviceID := ExtractDeviceID(&device)
-	discoveryTopic := f.factory.BuildDiscoveryTopic(deviceID, sensorKey)
-	uniqueID := f.factory.BuildUniqueID(deviceID, sensorKey)
+	discoveryTopic := topics.BuildDiscoveryTopic(deviceID, sensorKey)
+	uniqueID := topics.BuildUniqueID(deviceID, sensorKey)
 
 	// Configuration for the frequency sensor
 	config := SensorConfig{
@@ -63,7 +62,7 @@ func (f *FrequencyTopic) PublishDiscovery(ctx context.Context, client mqtt.Clien
 		StateClass:          result.StateClass,
 		Device:              device,
 		ValueTemplate:       "{{ value_json.value }}",
-		AvailabilityTopic:   f.config.StatusTopic,
+		AvailabilityTopic:   topics.BuildStatusTopic(config.BridgeDeviceID),
 		PayloadAvailable:    "online",
 		PayloadNotAvailable: "offline",
 	}

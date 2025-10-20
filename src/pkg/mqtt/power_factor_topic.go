@@ -7,6 +7,7 @@ import (
 	"math"
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/modbus"
+	"mqtt-modbus-bridge/pkg/topics"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -14,15 +15,13 @@ import (
 
 // PowerFactorTopic handles power factor sensor publishing
 type PowerFactorTopic struct {
-	config  *config.HAConfig
-	factory *TopicFactory
+	config *config.HAConfig
 }
 
 // NewPowerFactorTopic creates a new power factor topic handler
 func NewPowerFactorTopic(config *config.HAConfig) *PowerFactorTopic {
 	return &PowerFactorTopic{
-		config:  config,
-		factory: NewTopicFactory(config.DiscoveryPrefix),
+		config: config,
 	}
 }
 
@@ -48,10 +47,10 @@ func (pf *PowerFactorTopic) PublishDiscovery(ctx context.Context, client mqtt.Cl
 		}
 	}
 
-	// Build topics using factory
+	// Build topics using topics package
 	deviceID := ExtractDeviceID(&device)
-	discoveryTopic := pf.factory.BuildDiscoveryTopic(deviceID, sensorKey)
-	uniqueID := pf.factory.BuildUniqueID(deviceID, sensorKey)
+	discoveryTopic := topics.BuildDiscoveryTopic(deviceID, sensorKey)
+	uniqueID := topics.BuildUniqueID(deviceID, sensorKey)
 
 	// Configuration for the power factor sensor
 	config := SensorConfig{
@@ -63,7 +62,7 @@ func (pf *PowerFactorTopic) PublishDiscovery(ctx context.Context, client mqtt.Cl
 		StateClass:          result.StateClass,
 		Device:              device,
 		ValueTemplate:       "{{ value_json.value | round(2) }}",
-		AvailabilityTopic:   pf.config.StatusTopic,
+		AvailabilityTopic:   topics.BuildStatusTopic(config.BridgeDeviceID),
 		PayloadAvailable:    "online",
 		PayloadNotAvailable: "offline",
 	}
