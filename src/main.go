@@ -12,6 +12,7 @@ import (
 	"mqtt-modbus-bridge/pkg/metrics"
 	"mqtt-modbus-bridge/pkg/modbus"
 	"mqtt-modbus-bridge/pkg/mqtt"
+	"mqtt-modbus-bridge/pkg/recovery"
 	"mqtt-modbus-bridge/pkg/topics"
 	"os"
 	"os/signal"
@@ -35,7 +36,7 @@ const (
 // Refactored to use extracted health monitoring and performance tracking components
 type Application struct {
 	config    *config.Config
-	gateway   *gateway.USRGateway
+	gateway   gateway.Gateway // Interface allows circuit breaker wrapper
 	executor  *modbus.StrategyExecutor
 	publisher *mqtt.Publisher
 
@@ -75,7 +76,15 @@ func NewApplication(configPath string) (*Application, error) {
 	logger.LogDebug("📍 Topics package initialized with discovery prefix: %s", cfg.HomeAssistant.DiscoveryPrefix)
 
 	// Create gateway
-	gatewayInstance := gateway.NewUSRGateway(&cfg.MQTT)
+	baseGateway := gateway.NewUSRGateway(&cfg.MQTT)
+
+	// Wrap gateway with circuit breaker for resilience
+	cbConfig := recovery.CircuitBreakerConfig{
+		MaxFailures:      5,
+		Timeout:          30 * time.Second,
+		HalfOpenMaxTries: 3,
+	}
+	gatewayInstance := gateway.NewCircuitBreakerGateway(baseGateway, cbConfig)
 
 	// Create strategy executor with discovery prefix
 	executor := modbus.NewStrategyExecutor(gatewayInstance, cfg.HomeAssistant.DiscoveryPrefix)
