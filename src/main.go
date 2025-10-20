@@ -639,6 +639,11 @@ func (app *Application) heartbeatLoop(ctx context.Context) {
 					logger.LogError("⚠️ Heartbeat failed: %v", err)
 				} else {
 					logger.LogDebug("💓 Heartbeat sent: online")
+
+					// Also send diagnostic heartbeat to keep sensor alive
+					if diagErr := app.publisher.PublishDiagnostic(ctx, DiagnosticOK, "MQTT-Modbus Bridge running"); diagErr != nil {
+						logger.LogDebug("⚠️ Diagnostic heartbeat failed: %v", diagErr)
+					}
 				}
 			}
 		}
