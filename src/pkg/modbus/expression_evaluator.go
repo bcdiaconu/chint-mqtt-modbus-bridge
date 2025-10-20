@@ -81,6 +81,11 @@ func (e *ExpressionEvaluator) evaluateNumericExpression(expr string) (float64, e
 		return e.evaluateAbs(expr)
 	}
 
+	// Handle parentheses first (highest precedence after functions)
+	if strings.HasPrefix(expr, "(") && strings.HasSuffix(expr, ")") {
+		return e.evaluateNumericExpression(expr[1 : len(expr)-1])
+	}
+
 	// Handle addition and subtraction (lowest precedence)
 	if idx := e.findOperator(expr, "+-"); idx != -1 {
 		left, err := e.evaluateNumericExpression(expr[:idx])
@@ -118,7 +123,7 @@ func (e *ExpressionEvaluator) evaluateNumericExpression(expr string) (float64, e
 		return left / right, nil
 	}
 
-	// Handle power operator (^) - higher precedence than +, -, *, /
+	// Handle power operator (^) - highest precedence among binary operators
 	if idx := e.findOperator(expr, "^"); idx != -1 {
 		left, err := e.evaluateNumericExpression(expr[:idx])
 		if err != nil {
@@ -130,11 +135,6 @@ func (e *ExpressionEvaluator) evaluateNumericExpression(expr string) (float64, e
 		}
 
 		return math.Pow(left, right), nil
-	}
-
-	// Handle parentheses
-	if strings.HasPrefix(expr, "(") && strings.HasSuffix(expr, ")") {
-		return e.evaluateNumericExpression(expr[1 : len(expr)-1])
 	}
 
 	// Parse as number

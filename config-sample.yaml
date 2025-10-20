@@ -234,9 +234,10 @@ devices:
               offset: 12
               unit: "var"
               scale_factor: 1000.0    # DDSU666 reports in kvar, convert to var
+              apply_abs: true         # Convert negative reactive power to positive
               device_class: "reactive_power"
               state_class: "measurement"
-              min: -50000.0
+              min: 0.0                # After abs(), minimum is 0
               max: 50000.0
 
             - key: "power_factor"
