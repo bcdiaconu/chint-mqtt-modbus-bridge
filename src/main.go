@@ -315,7 +315,7 @@ func (app *Application) handleGatewayError(ctx context.Context) {
 	if app.healthMonitor.IsInGracePeriod() {
 		// Still in grace period - don't change status to offline yet
 		logger.LogDebug("🕐 Error %d in grace period (%.1fs elapsed) - keeping status online",
-			app.healthMonitor.GetConsecutiveErrors(), 
+			app.healthMonitor.GetConsecutiveErrors(),
 			app.healthMonitor.GetTimeSinceFirstError().Seconds())
 		return
 	}
@@ -324,7 +324,7 @@ func (app *Application) handleGatewayError(ctx context.Context) {
 	if shouldMarkOffline && app.healthMonitor.IsOnline() {
 		app.healthMonitor.MarkOffline()
 		logger.LogError("🔴 Grace period expired - App marked as OFFLINE after %d errors over %.1f seconds",
-			app.healthMonitor.GetConsecutiveErrors(), 
+			app.healthMonitor.GetConsecutiveErrors(),
 			app.healthMonitor.GetTimeSinceFirstError().Seconds())
 
 		// Publish offline status to ensure MQTT broker has correct state

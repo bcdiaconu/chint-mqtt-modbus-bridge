@@ -9,10 +9,10 @@ import (
 // GatewayHealthMonitor tracks gateway online/offline status and integrates with error recovery
 // Extracted from Application to follow Single Responsibility Principle
 type GatewayHealthMonitor struct {
-	isOnline         bool
-	lastErrorTime    time.Time
-	errorManager     *recovery.ErrorRecoveryManager
-	mu               sync.RWMutex
+	isOnline      bool
+	lastErrorTime time.Time
+	errorManager  *recovery.ErrorRecoveryManager
+	mu            sync.RWMutex
 }
 
 // NewGatewayHealthMonitor creates a new gateway health monitor
@@ -35,7 +35,7 @@ func (m *GatewayHealthMonitor) IsOnline() bool {
 func (m *GatewayHealthMonitor) RecordSuccess() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.errorManager.RecordSuccess()
 	m.isOnline = true
 }
@@ -44,10 +44,10 @@ func (m *GatewayHealthMonitor) RecordSuccess() {
 func (m *GatewayHealthMonitor) RecordError() (shouldMarkOffline bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.lastErrorTime = time.Now()
 	m.errorManager.RecordError()
-	
+
 	return m.errorManager.ShouldMarkOffline()
 }
 
@@ -55,7 +55,7 @@ func (m *GatewayHealthMonitor) RecordError() (shouldMarkOffline bool) {
 func (m *GatewayHealthMonitor) MarkOffline() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.isOnline = false
 	m.errorManager.MarkAsOffline()
 }
@@ -64,7 +64,7 @@ func (m *GatewayHealthMonitor) MarkOffline() {
 func (m *GatewayHealthMonitor) MarkOnline() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.isOnline = true
 	m.errorManager.Reset()
 }

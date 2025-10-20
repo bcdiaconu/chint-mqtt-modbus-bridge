@@ -18,7 +18,7 @@ func NewErrorRecoveryManager(gracePeriod time.Duration) *ErrorRecoveryManager {
 	if gracePeriod == 0 {
 		gracePeriod = 15 * time.Second // Default grace period
 	}
-	
+
 	return &ErrorRecoveryManager{
 		consecutiveErrors:  0,
 		firstErrorTime:     time.Time{},
@@ -30,12 +30,12 @@ func NewErrorRecoveryManager(gracePeriod time.Duration) *ErrorRecoveryManager {
 // RecordError records an error occurrence and returns whether grace period has expired
 func (m *ErrorRecoveryManager) RecordError() bool {
 	m.consecutiveErrors++
-	
+
 	// Record first error time if this is the start of an error sequence
 	if m.firstErrorTime.IsZero() {
 		m.firstErrorTime = time.Now()
 	}
-	
+
 	// Check if grace period has expired
 	return time.Since(m.firstErrorTime) >= m.errorGracePeriod
 }
@@ -58,12 +58,12 @@ func (m *ErrorRecoveryManager) ShouldMarkOffline() bool {
 	if m.statusSetToOffline {
 		return false // Already marked offline, don't repeat
 	}
-	
+
 	// Mark offline if grace period has expired
 	if !m.firstErrorTime.IsZero() && time.Since(m.firstErrorTime) >= m.errorGracePeriod {
 		return true
 	}
-	
+
 	return false
 }
 
