@@ -240,6 +240,11 @@ Comprehensive documentation is available in the `docs/` directory:
 - **[Function Codes](docs/FUNCTION_CODE.md)** - Supported Modbus function codes
 - **[Reactive Power Calculation](docs/REACTIVE_POWER_CALCULATION.md)** - Power calculations
 
+### Architecture Documentation
+
+- **[Architecture Overview](docs/ARCHITECTURE.md)** - Phase 1 & Phase 2 architectural refactoring documentation
+- **[P2/P3 Components](docs/P2_P3_COMPONENTS.md)** - Detailed documentation of metrics, config injection, health checks, and logger interface
+
 ## Configuration
 
 Create a configuration file in one of these locations:
