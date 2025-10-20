@@ -24,6 +24,7 @@ type Config struct {
 	MQTT           MQTTConfig                    `yaml:"mqtt"`
 	HomeAssistant  HAConfig                      `yaml:"homeassistant"`
 	Modbus         ModbusConfig                  `yaml:"modbus"`
+	Application    ApplicationConfig             `yaml:"application"`                    // Application-level settings (timings, intervals)
 	Registers      map[string]Register           `yaml:"registers,omitempty"`            // V1 format
 	RegisterGroups map[string]RegisterGroup      `yaml:"register_groups,omitempty"`      // V2.0 format
 	Devices        map[string]Device             `yaml:"devices,omitempty"`              // V2.1 format (recommended)
@@ -92,6 +93,15 @@ type DiagnosticThresholdsConfig struct {
 	WarningConsecutiveErrors int     `yaml:"warning_consecutive_errors"` // Consecutive errors to trigger warning (default: 3)
 	ErrorConsecutiveErrors   int     `yaml:"error_consecutive_errors"`   // Consecutive errors to trigger error (default: 5)
 	OfflineTimeout           int     `yaml:"offline_timeout"`            // Seconds without response to trigger offline (default: 30)
+}
+
+// ApplicationConfig contains application-level settings
+type ApplicationConfig struct {
+	PerformanceSummaryInterval int `yaml:"performance_summary_interval"` // Seconds between performance summaries (default: 30)
+	ErrorGracePeriod           int `yaml:"error_grace_period"`           // Seconds to wait before marking offline (default: 15)
+	MaxPublishInterval         int `yaml:"max_publish_interval"`         // Maximum seconds between publishes (default: 300)
+	HealthCheckPort            int `yaml:"health_check_port"`            // Port for health check endpoint (default: 8080, 0 = disabled)
+	MetricsPort                int `yaml:"metrics_port"`                 // Port for Prometheus metrics endpoint (default: 0 = disabled)
 }
 
 // ModbusConfig contains Modbus device settings
@@ -188,6 +198,10 @@ func LoadConfig(configPath string) (*Config, error) {
 		config.Version = "1.0"
 	}
 
+	// Apply defaults before validation
+	config.ApplyApplicationDefaults()
+	config.ApplyDeviceDiagnosticsDefaults()
+
 	// Configuration validation
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration in %s: %w", usedPath, err)
@@ -223,13 +237,14 @@ func LoadConfigFromString(yamlContent string) (*Config, error) {
 		config.Version = "1.0"
 	}
 
+	// Apply defaults before validation
+	config.ApplyApplicationDefaults()
+	config.ApplyDeviceDiagnosticsDefaults()
+
 	// Configuration validation
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
-
-	// Apply device diagnostics defaults
-	config.ApplyDeviceDiagnosticsDefaults()
 
 	return &config, nil
 }
@@ -341,6 +356,33 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// ApplyApplicationDefaults applies default values for application configuration
+func (c *Config) ApplyApplicationDefaults() {
+	app := &c.Application
+
+	// Apply performance summary interval default
+	if app.PerformanceSummaryInterval == 0 {
+		app.PerformanceSummaryInterval = 30 // 30 seconds
+	}
+
+	// Apply error grace period default
+	if app.ErrorGracePeriod == 0 {
+		app.ErrorGracePeriod = 15 // 15 seconds
+	}
+
+	// Apply max publish interval default
+	if app.MaxPublishInterval == 0 {
+		app.MaxPublishInterval = 300 // 5 minutes
+	}
+
+	// Apply health check port default
+	if app.HealthCheckPort == 0 {
+		app.HealthCheckPort = 8080 // Default port 8080
+	}
+
+	// Metrics port defaults to 0 (disabled) - no change needed
 }
 
 // ApplyDeviceDiagnosticsDefaults applies default values for device diagnostics configuration
