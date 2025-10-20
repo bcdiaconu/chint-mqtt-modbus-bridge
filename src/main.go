@@ -7,6 +7,7 @@ import (
 	"mqtt-modbus-bridge/pkg/diagnostics"
 	"mqtt-modbus-bridge/pkg/gateway"
 	"mqtt-modbus-bridge/pkg/health"
+	httpHealth "mqtt-modbus-bridge/pkg/http"
 	"mqtt-modbus-bridge/pkg/logger"
 	"mqtt-modbus-bridge/pkg/metrics"
 	"mqtt-modbus-bridge/pkg/modbus"
@@ -206,6 +207,17 @@ func (app *Application) Start(ctx context.Context) error {
 			}
 		}()
 		logger.LogInfo("🔢 Metrics available at http://localhost:%d/metrics", app.config.Application.MetricsPort)
+	}
+
+	// Start health check server (if enabled)
+	if app.config.Application.HealthCheckPort > 0 {
+		healthHandler := httpHealth.NewHealthHandler(app.healthMonitor, "1.0.0")
+		go func() {
+			if err := httpHealth.StartHealthServer(healthHandler, app.config.Application.HealthCheckPort); err != nil {
+				logger.LogError("❌ Health server error: %v", err)
+			}
+		}()
+		logger.LogInfo("🏥 Health check available at http://localhost:%d/health", app.config.Application.HealthCheckPort)
 	}
 
 	logger.LogInfo("✅ MQTT-Modbus Bridge started successfully")

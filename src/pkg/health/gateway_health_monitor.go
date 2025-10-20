@@ -9,18 +9,22 @@ import (
 // GatewayHealthMonitor tracks gateway online/offline status and integrates with error recovery
 // Extracted from Application to follow Single Responsibility Principle
 type GatewayHealthMonitor struct {
-	isOnline      bool
-	lastErrorTime time.Time
-	errorManager  *recovery.ErrorRecoveryManager
-	mu            sync.RWMutex
+	isOnline        bool
+	lastErrorTime   time.Time
+	lastSuccessTime time.Time
+	successCount    int
+	errorManager    *recovery.ErrorRecoveryManager
+	mu              sync.RWMutex
 }
 
 // NewGatewayHealthMonitor creates a new gateway health monitor
 func NewGatewayHealthMonitor(gracePeriod time.Duration) *GatewayHealthMonitor {
 	return &GatewayHealthMonitor{
-		isOnline:      true,
-		lastErrorTime: time.Time{},
-		errorManager:  recovery.NewErrorRecoveryManager(gracePeriod),
+		isOnline:        true,
+		lastErrorTime:   time.Time{},
+		lastSuccessTime: time.Now(), // Initialize with current time
+		successCount:    0,
+		errorManager:    recovery.NewErrorRecoveryManager(gracePeriod),
 	}
 }
 
@@ -38,6 +42,8 @@ func (m *GatewayHealthMonitor) RecordSuccess() {
 
 	m.errorManager.RecordSuccess()
 	m.isOnline = true
+	m.lastSuccessTime = time.Now()
+	m.successCount++
 }
 
 // RecordError records a gateway error and returns whether it should be marked offline
@@ -95,4 +101,25 @@ func (m *GatewayHealthMonitor) GetTimeSinceFirstError() time.Duration {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.errorManager.GetTimeSinceFirstError()
+}
+
+// GetErrorCount returns the total consecutive errors (implements HealthChecker interface)
+func (m *GatewayHealthMonitor) GetErrorCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.errorManager.GetConsecutiveErrors()
+}
+
+// GetSuccessCount returns the total successful operations (implements HealthChecker interface)
+func (m *GatewayHealthMonitor) GetSuccessCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.successCount
+}
+
+// GetLastSuccessTime returns the time of the last successful operation (implements HealthChecker interface)
+func (m *GatewayHealthMonitor) GetLastSuccessTime() time.Time {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.lastSuccessTime
 }
