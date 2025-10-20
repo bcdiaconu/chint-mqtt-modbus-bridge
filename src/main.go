@@ -6,6 +6,7 @@ import (
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/diagnostics"
 	"mqtt-modbus-bridge/pkg/gateway"
+	"mqtt-modbus-bridge/pkg/health"
 	"mqtt-modbus-bridge/pkg/logger"
 	"mqtt-modbus-bridge/pkg/modbus"
 	"mqtt-modbus-bridge/pkg/mqtt"
@@ -29,6 +30,7 @@ const (
 
 // Application main application class
 // Facade Pattern - simplified interface for complex system
+// Refactored to use extracted health monitoring and performance tracking components
 type Application struct {
 	config    *config.Config
 	gateway   *gateway.USRGateway
@@ -37,15 +39,8 @@ type Application struct {
 
 	mu sync.Mutex // Mutex for synchronizing access to the gateway
 
-	// Gateway status tracking
-	consecutiveErrors int
-	isGatewayOnline   bool
-	lastErrorTime     time.Time
-
-	// Grace period for offline status - avoid oscillation for temporary errors
-	errorGracePeriod   time.Duration // Waiting time before marking as offline
-	firstErrorTime     time.Time     // First error in the current sequence
-	statusSetToOffline bool          // Flag to avoid repeatedly setting offline status
+	// Health monitoring (extracted from Application)
+	healthMonitor *health.GatewayHealthMonitor
 
 	// Performance tracking for cleaner output
 	lastSummaryTime time.Time
@@ -90,14 +85,8 @@ func NewApplication(configPath string) (*Application, error) {
 		gateway:   gatewayInstance,
 		executor:  executor,
 		publisher: publisher,
-		// Initialize gateway status tracking
-		consecutiveErrors: 0,
-		isGatewayOnline:   true,
-		lastErrorTime:     time.Time{},
-		// Initialize grace period tracking - 15 seconds grace before marking offline
-		errorGracePeriod:   15 * time.Second,
-		firstErrorTime:     time.Time{},
-		statusSetToOffline: false,
+		// Initialize health monitoring with 15 second grace period
+		healthMonitor: health.NewGatewayHealthMonitor(15 * time.Second),
 		// Initialize performance tracking
 		lastSummaryTime: time.Now(),
 		successfulReads: 0,
@@ -314,30 +303,29 @@ func (app *Application) executeAllStrategies(ctx context.Context) {
 
 // handleGatewayError manages error counting and offline status with grace period
 func (app *Application) handleGatewayError(ctx context.Context) {
-	app.consecutiveErrors++
-	app.lastErrorTime = time.Now()
+	// Record error and check if should mark offline
+	shouldMarkOffline := app.healthMonitor.RecordError()
 
-	// If this is the first error in the sequence, record the time
-	if app.firstErrorTime.IsZero() {
-		app.firstErrorTime = time.Now()
-		logger.LogWarn("⚠️ First error detected, starting grace period of %.0f seconds", app.errorGracePeriod.Seconds())
+	// If this is first error, log grace period start
+	if app.healthMonitor.GetConsecutiveErrors() == 1 {
+		logger.LogWarn("⚠️ First error detected, starting grace period")
 	}
 
 	// Check if we're still in grace period
-	timeSinceFirstError := time.Since(app.firstErrorTime)
-	if timeSinceFirstError < app.errorGracePeriod {
+	if app.healthMonitor.IsInGracePeriod() {
 		// Still in grace period - don't change status to offline yet
-		logger.LogDebug("🕐 Error %d in grace period (%.1fs/%.0fs) - keeping status online",
-			app.consecutiveErrors, timeSinceFirstError.Seconds(), app.errorGracePeriod.Seconds())
+		logger.LogDebug("🕐 Error %d in grace period (%.1fs elapsed) - keeping status online",
+			app.healthMonitor.GetConsecutiveErrors(), 
+			app.healthMonitor.GetTimeSinceFirstError().Seconds())
 		return
 	}
 
-	// Grace period expired - set status to offline if not already done
-	if app.isGatewayOnline && !app.statusSetToOffline {
-		app.isGatewayOnline = false
-		app.statusSetToOffline = true
+	// Grace period expired - set status to offline if needed
+	if shouldMarkOffline && app.healthMonitor.IsOnline() {
+		app.healthMonitor.MarkOffline()
 		logger.LogError("🔴 Grace period expired - App marked as OFFLINE after %d errors over %.1f seconds",
-			app.consecutiveErrors, timeSinceFirstError.Seconds())
+			app.healthMonitor.GetConsecutiveErrors(), 
+			app.healthMonitor.GetTimeSinceFirstError().Seconds())
 
 		// Publish offline status to ensure MQTT broker has correct state
 		if err := app.publisher.PublishStatusOffline(ctx); err != nil {
@@ -349,13 +337,11 @@ func (app *Application) handleGatewayError(ctx context.Context) {
 // handleGatewaySuccess resets error counter and changes status to online when functionality resumes
 func (app *Application) handleGatewaySuccess(ctx context.Context) {
 	// Reset error counter and grace period tracking
-	app.consecutiveErrors = 0
-	app.firstErrorTime = time.Time{}
-	app.statusSetToOffline = false
+	app.healthMonitor.RecordSuccess()
 
 	// If gateway was offline, mark it back online
-	if !app.isGatewayOnline {
-		app.isGatewayOnline = true
+	if !app.healthMonitor.IsOnline() {
+		app.healthMonitor.MarkOnline()
 		logger.LogInfo("🟢 App marked as ONLINE - functionality restored")
 
 		// Publish online status
@@ -634,7 +620,7 @@ func (app *Application) heartbeatLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			// Only send heartbeat if we're currently marked as online
-			if app.isGatewayOnline {
+			if app.healthMonitor.IsOnline() {
 				if err := app.publisher.PublishStatusOnline(ctx); err != nil {
 					logger.LogError("⚠️ Heartbeat failed: %v", err)
 				} else {
