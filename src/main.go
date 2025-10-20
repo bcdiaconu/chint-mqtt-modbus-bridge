@@ -8,6 +8,7 @@ import (
 	"mqtt-modbus-bridge/pkg/gateway"
 	"mqtt-modbus-bridge/pkg/health"
 	"mqtt-modbus-bridge/pkg/logger"
+	"mqtt-modbus-bridge/pkg/metrics"
 	"mqtt-modbus-bridge/pkg/modbus"
 	"mqtt-modbus-bridge/pkg/mqtt"
 	"mqtt-modbus-bridge/pkg/topics"
@@ -42,10 +43,8 @@ type Application struct {
 	// Health monitoring (extracted from Application)
 	healthMonitor *health.GatewayHealthMonitor
 
-	// Performance tracking for cleaner output
-	lastSummaryTime time.Time
-	successfulReads int
-	errorReads      int
+	// Performance tracking (using PerformanceTracker)
+	performanceTracker *metrics.PerformanceTracker
 
 	// Last publish tracking for forced republish
 	lastPublishTime map[string]time.Time // Track last publish time per sensor
@@ -80,17 +79,19 @@ func NewApplication(configPath string) (*Application, error) {
 	// Create publisher for Home Assistant
 	publisher := mqtt.NewPublisher(&cfg.MQTT, &cfg.HomeAssistant)
 
+	// Create performance tracker with configured interval
+	summaryInterval := time.Duration(cfg.Application.PerformanceSummaryInterval) * time.Second
+	performanceTracker := metrics.NewPerformanceTracker(summaryInterval)
+
 	app := &Application{
 		config:    cfg,
 		gateway:   gatewayInstance,
 		executor:  executor,
 		publisher: publisher,
-		// Initialize health monitoring with 15 second grace period
-		healthMonitor: health.NewGatewayHealthMonitor(15 * time.Second),
+		// Initialize health monitoring with configured grace period
+		healthMonitor: health.NewGatewayHealthMonitor(time.Duration(cfg.Application.ErrorGracePeriod) * time.Second),
 		// Initialize performance tracking
-		lastSummaryTime: time.Now(),
-		successfulReads: 0,
-		errorReads:      0,
+		performanceTracker: performanceTracker,
 
 		// Initialize last publish tracking
 		lastPublishTime: make(map[string]time.Time),
@@ -239,7 +240,7 @@ func (app *Application) executeAllStrategies(ctx context.Context) {
 	responseTime := time.Since(startTime)
 
 	if err != nil {
-		app.errorReads++
+		app.performanceTracker.RecordError()
 		app.handleGatewayError(ctx)
 		logger.LogError("❌ Strategy execution error: %v", err)
 
@@ -270,18 +271,14 @@ func (app *Application) executeAllStrategies(ctx context.Context) {
 	}
 
 	// Success - publish all results
-	app.successfulReads += len(results)
+	app.performanceTracker.RecordSuccessBatch(len(results))
 	app.handleGatewaySuccess(ctx)
 
-	// Only show detailed logs every 30 seconds
-	shouldLog := time.Since(app.lastSummaryTime) >= 30*time.Second
+	// Print summary if interval has passed
+	app.performanceTracker.PrintSummaryIfNeeded()
 
-	if shouldLog {
-		logger.LogInfo("📊 Summary - Success: %d, Errors: %d, Last 30s", app.successfulReads, app.errorReads)
-		app.lastSummaryTime = time.Now()
-		app.successfulReads = 0
-		app.errorReads = 0
-	}
+	// Check if we should show detailed logs
+	shouldLog := app.performanceTracker.ShouldPrintSummary()
 
 	// Publish each result to Home Assistant
 	for key, result := range results {

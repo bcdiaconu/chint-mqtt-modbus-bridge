@@ -8,6 +8,7 @@ import (
 	"mqtt-modbus-bridge/pkg/diagnostics"
 	"mqtt-modbus-bridge/pkg/health"
 	"mqtt-modbus-bridge/pkg/logger"
+	"mqtt-modbus-bridge/pkg/metrics"
 	"mqtt-modbus-bridge/pkg/modbus"
 	"time"
 )
@@ -15,17 +16,13 @@ import (
 // PollingService encapsulates the polling loop logic
 // Single Responsibility: Execute strategies and coordinate publishing
 type PollingService struct {
-	executor          builder.ExecutorInterface
-	publisher         builder.PublisherInterface
-	healthMonitor     *health.GatewayHealthMonitor
-	diagnosticManager *diagnostics.DeviceManager
-	config            *config.Config
-
-	// Performance tracking
-	successfulReads int
-	errorReads      int
-	lastSummaryTime time.Time
-	lastPublishTime map[string]time.Time
+	executor           builder.ExecutorInterface
+	publisher          builder.PublisherInterface
+	healthMonitor      *health.GatewayHealthMonitor
+	diagnosticManager  *diagnostics.DeviceManager
+	config             *config.Config
+	performanceTracker *metrics.PerformanceTracker
+	lastPublishTime    map[string]time.Time
 }
 
 // NewPollingService creates a new polling service
@@ -36,14 +33,15 @@ func NewPollingService(
 	diagnosticManager *diagnostics.DeviceManager,
 	cfg *config.Config,
 ) *PollingService {
+	summaryInterval := time.Duration(cfg.Application.PerformanceSummaryInterval) * time.Second
 	return &PollingService{
-		executor:          executor,
-		publisher:         publisher,
-		healthMonitor:     healthMonitor,
-		diagnosticManager: diagnosticManager,
-		config:            cfg,
-		lastPublishTime:   make(map[string]time.Time),
-		lastSummaryTime:   time.Now(),
+		executor:           executor,
+		publisher:          publisher,
+		healthMonitor:      healthMonitor,
+		diagnosticManager:  diagnosticManager,
+		config:             cfg,
+		performanceTracker: metrics.NewPerformanceTracker(summaryInterval),
+		lastPublishTime:    make(map[string]time.Time),
 	}
 }
 
@@ -86,7 +84,7 @@ func (s *PollingService) ExecuteAndPublish(ctx context.Context) {
 
 // handleExecutionError handles errors during strategy execution
 func (s *PollingService) handleExecutionError(ctx context.Context, err error) {
-	s.errorReads++
+	s.performanceTracker.RecordError()
 	s.recordError(ctx)
 
 	logger.LogError("❌ Strategy execution error: %v", err)
@@ -119,20 +117,14 @@ func (s *PollingService) handleExecutionSuccess(ctx context.Context, results map
 	}
 
 	// Success - mark gateway as healthy
-	s.successfulReads += len(results)
+	s.performanceTracker.RecordSuccessBatch(len(results))
 	s.recordSuccess(ctx)
 
-	// Print summary every 30 seconds
-	shouldLog := time.Since(s.lastSummaryTime) >= 30*time.Second
-
-	if shouldLog {
-		logger.LogInfo("📊 Summary - Success: %d, Errors: %d, Last 30s", s.successfulReads, s.errorReads)
-		s.lastSummaryTime = time.Now()
-		s.successfulReads = 0
-		s.errorReads = 0
-	}
+	// Print summary if interval has passed
+	s.performanceTracker.PrintSummaryIfNeeded()
 
 	// Publish each result to Home Assistant
+	shouldLog := s.performanceTracker.ShouldPrintSummary()
 	s.publishResults(ctx, results, shouldLog)
 }
 
@@ -215,5 +207,5 @@ func (s *PollingService) GetLastPublishTime(key string) (time.Time, bool) {
 
 // GetPerformanceStats returns current performance statistics
 func (s *PollingService) GetPerformanceStats() (successfulReads, errorReads int, lastSummary time.Time) {
-	return s.successfulReads, s.errorReads, s.lastSummaryTime
+	return s.performanceTracker.GetSuccessCount(), s.performanceTracker.GetErrorCount(), s.performanceTracker.GetLastSummaryTime()
 }
