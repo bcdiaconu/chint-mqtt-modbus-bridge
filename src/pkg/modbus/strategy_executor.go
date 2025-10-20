@@ -53,9 +53,24 @@ func (e *StrategyExecutor) RegisterFromDevices(devices map[string]config.Device)
 			// Collect all registers for this group
 			var registers []RegisterWithKey
 			for _, groupReg := range group.Registers {
-				// Calculate actual address
+				// Calculate actual address with bounds checking
 				offsetInRegisters := groupReg.Offset / 2
-				address := group.StartAddress + uint16(offsetInRegisters)
+
+				// Validate offset is within uint16 range to prevent overflow
+				if offsetInRegisters < 0 || offsetInRegisters > 0xFFFF {
+					logger.LogError("❌ Invalid register offset %d for device %s, group %s",
+						offsetInRegisters, deviceKey, groupKey)
+					continue
+				}
+
+				// Validate final address won't overflow
+				if int(group.StartAddress)+offsetInRegisters > 0xFFFF {
+					logger.LogError("❌ Register address overflow for device %s, group %s (base=0x%04X, offset=%d)",
+						deviceKey, groupKey, group.StartAddress, offsetInRegisters)
+					continue
+				}
+
+				address := group.StartAddress + uint16(offsetInRegisters) // #nosec G115 - validated above
 
 				// Build full register config
 				scaleFactor := groupReg.ScaleFactor
