@@ -46,6 +46,21 @@ func (tf *TopicFactory) BuildDiagnosticUniqueID(deviceID string) string {
 	return topics.BuildDiagnosticUniqueID(deviceID)
 }
 
+// BuildDeviceDiagnosticDiscoveryTopic constructs discovery topic for per-device diagnostic sensor
+func (tf *TopicFactory) BuildDeviceDiagnosticDiscoveryTopic(deviceID string) string {
+	return topics.BuildDeviceDiagnosticDiscoveryTopic(tf.discoveryPrefix, deviceID)
+}
+
+// BuildDeviceDiagnosticStateTopic constructs state topic for per-device diagnostic sensor
+func (tf *TopicFactory) BuildDeviceDiagnosticStateTopic(deviceID string) string {
+	return topics.BuildDeviceDiagnosticStateTopic(tf.discoveryPrefix, deviceID)
+}
+
+// BuildDeviceDiagnosticUniqueID constructs unique ID for per-device diagnostic sensor
+func (tf *TopicFactory) BuildDeviceDiagnosticUniqueID(deviceID string) string {
+	return topics.BuildDeviceDiagnosticUniqueID(deviceID)
+}
+
 // ExtractDeviceID extracts the device ID from a DeviceInfo
 func ExtractDeviceID(deviceInfo *DeviceInfo) string {
 	if deviceInfo != nil && len(deviceInfo.Identifiers) > 0 {

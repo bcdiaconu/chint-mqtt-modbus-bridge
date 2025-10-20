@@ -44,3 +44,21 @@ func BuildDiagnosticStateTopic(prefix, deviceID string) string {
 func BuildDiagnosticUniqueID(deviceID string) string {
 	return fmt.Sprintf("%s_diagnostic", deviceID)
 }
+
+// BuildDeviceDiagnosticDiscoveryTopic constructs discovery topic for per-device diagnostic sensor
+// Pattern: {prefix}/sensor/{device_id}/{device_id}_device_diagnostic/config
+func BuildDeviceDiagnosticDiscoveryTopic(prefix, deviceID string) string {
+	return fmt.Sprintf("%s/sensor/%s/%s_device_diagnostic/config", prefix, deviceID, deviceID)
+}
+
+// BuildDeviceDiagnosticStateTopic constructs state topic for per-device diagnostic sensor
+// Pattern: {prefix}/sensor/{device_id}/{device_id}_device_diagnostic/state
+func BuildDeviceDiagnosticStateTopic(prefix, deviceID string) string {
+	return fmt.Sprintf("%s/sensor/%s/%s_device_diagnostic/state", prefix, deviceID, deviceID)
+}
+
+// BuildDeviceDiagnosticUniqueID constructs unique ID for per-device diagnostic sensor
+// Pattern: {device_id}_device_diagnostic
+func BuildDeviceDiagnosticUniqueID(deviceID string) string {
+	return fmt.Sprintf("%s_device_diagnostic", deviceID)
+}

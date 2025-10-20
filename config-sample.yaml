@@ -18,6 +18,26 @@ homeassistant:
   discovery_prefix: "homeassistant"
   status_topic: "modbus-bridge/status"
   diagnostic_topic: "modbus-bridge/diagnostic"
+  
+  # Per-device diagnostic sensors configuration
+  device_diagnostics:
+    enabled: true                    # Enable diagnostic sensor for each device (default: true)
+    publish_on_state_change: true    # Publish immediately when device state changes (default: true)
+    
+    # Publish intervals per device state (in seconds)
+    intervals:
+      operational: 60                # Device working perfectly (default: 60s)
+      warning: 30                    # Device has minor issues (default: 30s)
+      error: 5                       # Device has serious errors - fast updates for debugging (default: 5s)
+      offline: 60                    # Device not responding (default: 60s)
+    
+    # Thresholds for determining device state
+    thresholds:
+      warning_success_rate: 90.0        # Success rate below this triggers warning state (default: 90.0%)
+      error_success_rate: 80.0          # Success rate below this triggers error state (default: 80.0%)
+      warning_consecutive_errors: 3     # Consecutive errors to trigger warning (default: 3)
+      error_consecutive_errors: 5       # Consecutive errors to trigger error (default: 5)
+      offline_timeout: 30               # Seconds without response to trigger offline (default: 30s)
 
 modbus:
   poll_interval: 1000

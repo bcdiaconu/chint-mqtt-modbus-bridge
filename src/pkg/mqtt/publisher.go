@@ -237,6 +237,18 @@ func (p *Publisher) PublishDiagnosticDiscovery(ctx context.Context) error {
 	return handler.PublishDiscovery(ctx, p.client, dummyResult, bridgeDeviceInfo)
 }
 
+// PublishDeviceDiagnosticDiscovery publishes discovery configuration for per-device diagnostic sensor
+func (p *Publisher) PublishDeviceDiagnosticDiscovery(ctx context.Context, deviceID string, deviceInfo *DeviceInfo) error {
+	handler := p.context.GetDeviceDiagnosticTopic()
+	return handler.PublishDiscovery(ctx, p.client, deviceID, deviceInfo)
+}
+
+// PublishDeviceDiagnosticState publishes state for per-device diagnostic sensor
+func (p *Publisher) PublishDeviceDiagnosticState(ctx context.Context, deviceID string, metrics *DeviceMetrics) error {
+	handler := p.context.GetDeviceDiagnosticTopic()
+	return handler.PublishState(ctx, p.client, deviceID, metrics)
+}
+
 // SensorConfig configuration for a Home Assistant sensor
 type SensorConfig struct {
 	Name                   string     `json:"name"`

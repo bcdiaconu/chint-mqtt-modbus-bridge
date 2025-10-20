@@ -55,9 +55,10 @@ type GatewayConfig struct {
 // Global settings for the bridge (discovery prefix and bridge-level topics)
 // Per-device Home Assistant information is configured in Device struct
 type HAConfig struct {
-	DiscoveryPrefix string `yaml:"discovery_prefix"` // HA MQTT discovery prefix (e.g., "homeassistant")
-	StatusTopic     string `yaml:"status_topic"`     // Bridge availability topic
-	DiagnosticTopic string `yaml:"diagnostic_topic"` // Bridge diagnostics topic
+	DiscoveryPrefix   string                  `yaml:"discovery_prefix"`   // HA MQTT discovery prefix (e.g., "homeassistant")
+	StatusTopic       string                  `yaml:"status_topic"`       // Bridge availability topic
+	DiagnosticTopic   string                  `yaml:"diagnostic_topic"`   // Bridge diagnostics topic
+	DeviceDiagnostics DeviceDiagnosticsConfig `yaml:"device_diagnostics"` // Per-device diagnostic configuration
 
 	// DEPRECATED: These fields are now per-device in Device struct
 	// Kept for backward compatibility with V2.0 configs
@@ -65,6 +66,31 @@ type HAConfig struct {
 	DeviceID     string `yaml:"device_id,omitempty"`
 	Manufacturer string `yaml:"manufacturer,omitempty"`
 	Model        string `yaml:"model,omitempty"`
+}
+
+// DeviceDiagnosticsConfig configuration for per-device diagnostics
+type DeviceDiagnosticsConfig struct {
+	Enabled              bool                       `yaml:"enabled"`                 // Enable per-device diagnostic sensors
+	PublishOnStateChange bool                       `yaml:"publish_on_state_change"` // Publish immediately on state change
+	Intervals            DiagnosticIntervalsConfig  `yaml:"intervals"`               // Periodic publish intervals per state
+	Thresholds           DiagnosticThresholdsConfig `yaml:"thresholds"`              // Thresholds for state determination
+}
+
+// DiagnosticIntervalsConfig periodic publish intervals based on device state
+type DiagnosticIntervalsConfig struct {
+	Operational int `yaml:"operational"` // Publish interval in seconds when operational (default: 60)
+	Warning     int `yaml:"warning"`     // Publish interval in seconds when warning (default: 30)
+	Error       int `yaml:"error"`       // Publish interval in seconds when error (default: 5)
+	Offline     int `yaml:"offline"`     // Publish interval in seconds when offline (default: 60)
+}
+
+// DiagnosticThresholdsConfig thresholds for determining device state
+type DiagnosticThresholdsConfig struct {
+	WarningSuccessRate       float64 `yaml:"warning_success_rate"`       // Success rate below this triggers warning (default: 90.0)
+	ErrorSuccessRate         float64 `yaml:"error_success_rate"`         // Success rate below this triggers error (default: 80.0)
+	WarningConsecutiveErrors int     `yaml:"warning_consecutive_errors"` // Consecutive errors to trigger warning (default: 3)
+	ErrorConsecutiveErrors   int     `yaml:"error_consecutive_errors"`   // Consecutive errors to trigger error (default: 5)
+	OfflineTimeout           int     `yaml:"offline_timeout"`            // Seconds without response to trigger offline (default: 30)
 }
 
 // ModbusConfig contains Modbus device settings
@@ -201,6 +227,9 @@ func LoadConfigFromString(yamlContent string) (*Config, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
+	// Apply device diagnostics defaults
+	config.ApplyDeviceDiagnosticsDefaults()
+
 	return &config, nil
 }
 
@@ -314,4 +343,50 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// ApplyDeviceDiagnosticsDefaults applies default values for device diagnostics configuration
+func (c *Config) ApplyDeviceDiagnosticsDefaults() {
+	dd := &c.HomeAssistant.DeviceDiagnostics
+
+	// If not explicitly disabled, enable by default
+	if !dd.Enabled && !dd.PublishOnStateChange && dd.Intervals.Operational == 0 {
+		dd.Enabled = true
+	}
+
+	// Enable publish on state change by default
+	if !dd.PublishOnStateChange && dd.Enabled {
+		dd.PublishOnStateChange = true
+	}
+
+	// Apply interval defaults
+	if dd.Intervals.Operational == 0 {
+		dd.Intervals.Operational = 60 // 1 minute for operational state
+	}
+	if dd.Intervals.Warning == 0 {
+		dd.Intervals.Warning = 30 // 30 seconds for warning state
+	}
+	if dd.Intervals.Error == 0 {
+		dd.Intervals.Error = 5 // 5 seconds for error state (fast debugging)
+	}
+	if dd.Intervals.Offline == 0 {
+		dd.Intervals.Offline = 60 // 1 minute for offline state
+	}
+
+	// Apply threshold defaults
+	if dd.Thresholds.WarningSuccessRate == 0 {
+		dd.Thresholds.WarningSuccessRate = 90.0 // Below 90% triggers warning
+	}
+	if dd.Thresholds.ErrorSuccessRate == 0 {
+		dd.Thresholds.ErrorSuccessRate = 80.0 // Below 80% triggers error
+	}
+	if dd.Thresholds.WarningConsecutiveErrors == 0 {
+		dd.Thresholds.WarningConsecutiveErrors = 3 // 3 consecutive errors trigger warning
+	}
+	if dd.Thresholds.ErrorConsecutiveErrors == 0 {
+		dd.Thresholds.ErrorConsecutiveErrors = 5 // 5 consecutive errors trigger error
+	}
+	if dd.Thresholds.OfflineTimeout == 0 {
+		dd.Thresholds.OfflineTimeout = 30 // 30 seconds without response triggers offline
+	}
 }

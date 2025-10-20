@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"mqtt-modbus-bridge/pkg/config"
+	"mqtt-modbus-bridge/pkg/diagnostics"
 	"mqtt-modbus-bridge/pkg/gateway"
 	"mqtt-modbus-bridge/pkg/logger"
 	"mqtt-modbus-bridge/pkg/modbus"
@@ -53,6 +54,9 @@ type Application struct {
 
 	// Last publish tracking for forced republish
 	lastPublishTime map[string]time.Time // Track last publish time per sensor
+
+	// Device diagnostics manager (moved to diagnostics package for better separation)
+	diagnosticManager *diagnostics.DeviceManager
 }
 
 // NewApplication creates a new application instance
@@ -96,6 +100,16 @@ func NewApplication(configPath string) (*Application, error) {
 
 		// Initialize last publish tracking
 		lastPublishTime: make(map[string]time.Time),
+	}
+
+	// Initialize device diagnostics manager (if enabled)
+	if cfg.HomeAssistant.DeviceDiagnostics.Enabled {
+		app.diagnosticManager = diagnostics.NewDeviceManager(
+			publisher,
+			&cfg.HomeAssistant.DeviceDiagnostics,
+			cfg.Devices,
+		)
+		logger.LogDebug("📊 Device diagnostics manager initialized")
 	}
 
 	// Register all strategies from devices
@@ -163,6 +177,12 @@ func (app *Application) Start(ctx context.Context) error {
 	// Start heartbeat to maintain online status
 	go app.heartbeatLoop(ctx)
 
+	// Start device diagnostics loop (if enabled)
+	if app.config.HomeAssistant.DeviceDiagnostics.Enabled && app.diagnosticManager != nil {
+		go app.diagnosticManager.StartDiagnosticsLoop(ctx)
+		logger.LogInfo("📊 Device diagnostics enabled")
+	}
+
 	// Start forced republish loop for energy sensors
 	go app.forcedRepublishLoop(ctx)
 
@@ -216,13 +236,27 @@ func (app *Application) mainLoopNormalRegisters(ctx context.Context) {
 
 // executeAllStrategies executes all registered strategies and publishes results
 func (app *Application) executeAllStrategies(ctx context.Context) {
+	// Track start time for response time measurement
+	startTime := time.Now()
+
 	// Execute all strategies (groups first, then calculated)
 	results, err := app.executor.ExecuteAll(ctx)
+
+	responseTime := time.Since(startTime)
 
 	if err != nil {
 		app.errorReads++
 		app.handleGatewayError(ctx)
 		logger.LogError("❌ Strategy execution error: %v", err)
+
+		// Update metrics for all devices (error) - if diagnostic manager is enabled
+		if app.diagnosticManager != nil {
+			for deviceID := range app.config.Devices {
+				if app.config.Devices[deviceID].Metadata.Enabled {
+					app.diagnosticManager.RecordError(deviceID, fmt.Sprintf("Strategy execution error: %v", err))
+				}
+			}
+		}
 
 		// Publish diagnostic
 		errorMsg := fmt.Sprintf("Strategy execution error: %v", err)
@@ -230,6 +264,15 @@ func (app *Application) executeAllStrategies(ctx context.Context) {
 			logger.LogError("⚠️ Error publishing diagnostic: %v", diagErr)
 		}
 		return
+	}
+
+	// Success - update metrics for all enabled devices (if diagnostic manager is enabled)
+	if app.diagnosticManager != nil {
+		for deviceID, device := range app.config.Devices {
+			if device.Metadata.Enabled {
+				app.diagnosticManager.RecordSuccess(deviceID, responseTime)
+			}
+		}
 	}
 
 	// Success - publish all results
@@ -413,6 +456,13 @@ func (app *Application) publishDiscoveryConfigsV21(ctx context.Context) error {
 		logger.LogError("⚠️ Error publishing diagnostic discovery: %v", err)
 	}
 
+	// Publish per-device diagnostic sensor discovery (if enabled and manager exists)
+	if app.config.HomeAssistant.DeviceDiagnostics.Enabled && app.diagnosticManager != nil {
+		if err := app.diagnosticManager.PublishDiscoveryForAllDevices(ctx); err != nil {
+			logger.LogWarn("⚠️ Error publishing device diagnostic discoveries: %v", err)
+		}
+	}
+
 	return nil
 }
 
@@ -558,6 +608,7 @@ func main() {
 	app.Stop()
 }
 
+// updateDeviceMetricsSuccess updates metrics for a successful device read
 // heartbeatLoop sends periodic "online" status to maintain availability
 func (app *Application) heartbeatLoop(ctx context.Context) {
 	// Use heartbeat_interval from config, default to 20 seconds if not specified

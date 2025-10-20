@@ -19,17 +19,19 @@ type TopicHandler interface {
 
 // TopicContext manages the topic handlers
 type TopicContext struct {
-	handlers   map[string]TopicHandler
-	config     *config.HAConfig
-	mqttConfig *config.MQTTConfig
+	handlers              map[string]TopicHandler
+	deviceDiagnosticTopic *DeviceDiagnosticTopic // Separate handler for device diagnostics
+	config                *config.HAConfig
+	mqttConfig            *config.MQTTConfig
 }
 
 // NewTopicContext creates a new topic context with all handlers
 func NewTopicContext(haCfg *config.HAConfig, mqttCfg *config.MQTTConfig) *TopicContext {
 	ctx := &TopicContext{
-		handlers:   make(map[string]TopicHandler),
-		config:     haCfg,
-		mqttConfig: mqttCfg,
+		handlers:              make(map[string]TopicHandler),
+		deviceDiagnosticTopic: NewDeviceDiagnosticTopic(haCfg),
+		config:                haCfg,
+		mqttConfig:            mqttCfg,
 	}
 
 	// Register all topic handlers
@@ -58,4 +60,9 @@ func (tc *TopicContext) GetHandler(topicType string) TopicHandler {
 // RegisterHandler allows registering custom topic handlers
 func (tc *TopicContext) RegisterHandler(name string, handler TopicHandler) {
 	tc.handlers[name] = handler
+}
+
+// GetDeviceDiagnosticTopic returns the device diagnostic topic handler
+func (tc *TopicContext) GetDeviceDiagnosticTopic() *DeviceDiagnosticTopic {
+	return tc.deviceDiagnosticTopic
 }
