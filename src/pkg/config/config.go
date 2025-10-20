@@ -33,13 +33,15 @@ type Config struct {
 
 // MQTTConfig contains MQTT broker and gateway settings
 type MQTTConfig struct {
-	Broker     string        `yaml:"broker"`
-	Port       int           `yaml:"port"`
-	Username   string        `yaml:"username"`
-	Password   string        `yaml:"password"`
-	ClientID   string        `yaml:"client_id"`
-	RetryDelay int           `yaml:"retry_delay"` // Delay between connection retries in milliseconds
-	Gateway    GatewayConfig `yaml:"gateway"`
+	Broker            string        `yaml:"broker"`
+	Port              int           `yaml:"port"`
+	Username          string        `yaml:"username"`
+	Password          string        `yaml:"password"`
+	ClientID          string        `yaml:"client_id"`
+	RetryDelay        int           `yaml:"retry_delay"`        // Delay between connection retries in milliseconds
+	KeepAlive         int           `yaml:"keep_alive"`         // MQTT keep alive interval in seconds (default: 60)
+	HeartbeatInterval int           `yaml:"heartbeat_interval"` // Heartbeat interval for status updates in seconds (default: 20)
+	Gateway           GatewayConfig `yaml:"gateway"`
 }
 
 // GatewayConfig contains USR-DR164 gateway specific settings

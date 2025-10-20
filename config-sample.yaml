@@ -7,6 +7,8 @@ mqtt:
   username: "mqtt"
   password: "mqtt_password"
   client_id: "modbus-bridge"
+  keep_alive: 60              # MQTT keep alive interval in seconds (default: 60)
+  heartbeat_interval: 20      # Status heartbeat interval in seconds (default: 20)
   gateway:
     mac: "D4AD20B75646"
     cmd_topic: "D4AD20B75646/cmd"

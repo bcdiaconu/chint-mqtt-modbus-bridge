@@ -560,8 +560,16 @@ func main() {
 
 // heartbeatLoop sends periodic "online" status to maintain availability
 func (app *Application) heartbeatLoop(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second) // Send heartbeat every 30 seconds
+	// Use heartbeat_interval from config, default to 20 seconds if not specified
+	heartbeatInterval := app.config.MQTT.HeartbeatInterval
+	if heartbeatInterval == 0 {
+		heartbeatInterval = 20
+	}
+
+	ticker := time.NewTicker(time.Duration(heartbeatInterval) * time.Second)
 	defer ticker.Stop()
+
+	logger.LogInfo("💓 Heartbeat loop started with interval: %d seconds", heartbeatInterval)
 
 	for {
 		select {
@@ -573,6 +581,8 @@ func (app *Application) heartbeatLoop(ctx context.Context) {
 			if app.isGatewayOnline {
 				if err := app.publisher.PublishStatusOnline(ctx); err != nil {
 					logger.LogError("⚠️ Heartbeat failed: %v", err)
+				} else {
+					logger.LogDebug("💓 Heartbeat sent: online")
 				}
 			}
 		}

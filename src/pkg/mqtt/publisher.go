@@ -28,7 +28,13 @@ func NewPublisher(cfg *config.MQTTConfig, haCfg *config.HAConfig) *Publisher {
 	opts.SetUsername(cfg.Username)
 	opts.SetPassword(cfg.Password)
 	opts.SetAutoReconnect(true)
-	opts.SetKeepAlive(60 * time.Second)
+
+	// Use keep_alive from config, default to 60 seconds if not specified
+	keepAlive := cfg.KeepAlive
+	if keepAlive == 0 {
+		keepAlive = 60
+	}
+	opts.SetKeepAlive(time.Duration(keepAlive) * time.Second)
 	opts.SetPingTimeout(10 * time.Second)
 
 	// Set Last Will and Testament to automatically mark as offline on disconnect
@@ -242,6 +248,7 @@ type SensorConfig struct {
 	Device                 DeviceInfo `json:"device"`
 	ValueTemplate          string     `json:"value_template"`
 	AvailabilityTopic      string     `json:"availability_topic"`
+	AvailabilityMode       string     `json:"availability_mode,omitempty"`
 	PayloadAvailable       string     `json:"payload_available"`
 	PayloadNotAvailable    string     `json:"payload_not_available"`
 	JSONAttributesTemplate string     `json:"json_attributes_template,omitempty"`

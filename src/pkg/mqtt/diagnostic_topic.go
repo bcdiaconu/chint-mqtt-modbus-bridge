@@ -71,6 +71,7 @@ func (d *DiagnosticTopic) PublishDiscovery(ctx context.Context, client mqtt.Clie
 		AvailabilityTopic:      d.config.StatusTopic,
 		PayloadAvailable:       "online",
 		PayloadNotAvailable:    "offline",
+		AvailabilityMode:       "latest",
 		JSONAttributesTemplate: "{{ value_json | tojson }}",
 		EntityCategory:         "diagnostic",
 	}
