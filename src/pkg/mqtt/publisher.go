@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"mqtt-modbus-bridge/pkg/config"
+	"mqtt-modbus-bridge/pkg/errors"
 	"mqtt-modbus-bridge/pkg/logger"
 	"mqtt-modbus-bridge/pkg/modbus"
 	"mqtt-modbus-bridge/pkg/topics"
@@ -83,7 +84,9 @@ func (p *Publisher) Connect(ctx context.Context) error {
 			// Wait for retry delay or context cancellation
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("HA publisher connection cancelled: %w", ctx.Err())
+				mqttErr := errors.NewMQTTError("connect_publisher", ctx.Err(), p.mqttConfig.Broker)
+				mqttErr.Topic = "connection"
+				return mqttErr
 			case <-time.After(retryDelay):
 				attempt++
 				continue
@@ -102,7 +105,9 @@ func (p *Publisher) Connect(ctx context.Context) error {
 			}
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("HA publisher connection cancelled during establishment: %w", ctx.Err())
+				mqttErr := errors.NewMQTTError("establish_connection", ctx.Err(), p.mqttConfig.Broker)
+				mqttErr.Topic = "connection"
+				return mqttErr
 			case <-time.After(100 * time.Millisecond):
 			}
 		}
@@ -118,7 +123,9 @@ func (p *Publisher) Connect(ctx context.Context) error {
 
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("HA publisher connection cancelled during timeout: %w", ctx.Err())
+			mqttErr := errors.NewMQTTError("connection_timeout", ctx.Err(), p.mqttConfig.Broker)
+			mqttErr.Topic = "connection"
+			return mqttErr
 		case <-time.After(retryDelay):
 			attempt++
 			continue

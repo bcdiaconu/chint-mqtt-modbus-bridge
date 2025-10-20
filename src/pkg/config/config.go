@@ -256,8 +256,8 @@ func (c *Config) Validate() error {
 	if c.MQTT.Broker == "" {
 		return fmt.Errorf("mqtt.broker is not specified")
 	}
-	if c.MQTT.Port <= 0 {
-		return fmt.Errorf("mqtt.port must be positive")
+	if c.MQTT.Port <= 0 || c.MQTT.Port > 65535 {
+		return fmt.Errorf("mqtt.port must be between 1 and 65535 (got %d)", c.MQTT.Port)
 	}
 	if c.MQTT.Gateway.MAC == "" {
 		return fmt.Errorf("mqtt.gateway.mac is not specified")
@@ -270,6 +270,11 @@ func (c *Config) Validate() error {
 	}
 	if c.Modbus.EnergyDelay < 0 {
 		return fmt.Errorf("modbus.energy_delay must be non-negative")
+	}
+
+	// Application configuration validation
+	if err := c.validateApplicationConfig(); err != nil {
+		return err
 	}
 
 	// Note: StatusTopic and DiagnosticTopic are now auto-generated from BridgeDeviceID
@@ -429,4 +434,64 @@ func (c *Config) ApplyDeviceDiagnosticsDefaults() {
 	if dd.Thresholds.OfflineTimeout == 0 {
 		dd.Thresholds.OfflineTimeout = 30 // 30 seconds without response triggers offline
 	}
+}
+
+// validateApplicationConfig validates application-level configuration
+func (c *Config) validateApplicationConfig() error {
+	app := &c.Application
+
+	// Validate port ranges (0 means disabled)
+	if app.HealthCheckPort < 0 || app.HealthCheckPort > 65535 {
+		return fmt.Errorf("application.health_check_port must be between 0 and 65535 (got %d, 0 = disabled)", app.HealthCheckPort)
+	}
+	if app.MetricsPort < 0 || app.MetricsPort > 65535 {
+		return fmt.Errorf("application.metrics_port must be between 0 and 65535 (got %d, 0 = disabled)", app.MetricsPort)
+	}
+
+	// Validate port conflicts (only if both are enabled)
+	if app.HealthCheckPort > 0 && app.MetricsPort > 0 {
+		if app.HealthCheckPort == app.MetricsPort {
+			return fmt.Errorf("application.health_check_port (%d) and application.metrics_port (%d) cannot use the same port",
+				app.HealthCheckPort, app.MetricsPort)
+		}
+
+		// Check if either port conflicts with MQTT port
+		if app.HealthCheckPort == c.MQTT.Port {
+			return fmt.Errorf("application.health_check_port (%d) conflicts with mqtt.port (%d)",
+				app.HealthCheckPort, c.MQTT.Port)
+		}
+		if app.MetricsPort == c.MQTT.Port {
+			return fmt.Errorf("application.metrics_port (%d) conflicts with mqtt.port (%d)",
+				app.MetricsPort, c.MQTT.Port)
+		}
+	} else if app.HealthCheckPort > 0 && app.HealthCheckPort == c.MQTT.Port {
+		// Health check enabled but metrics disabled
+		return fmt.Errorf("application.health_check_port (%d) conflicts with mqtt.port (%d)",
+			app.HealthCheckPort, c.MQTT.Port)
+	} else if app.MetricsPort > 0 && app.MetricsPort == c.MQTT.Port {
+		// Metrics enabled but health check disabled
+		return fmt.Errorf("application.metrics_port (%d) conflicts with mqtt.port (%d)",
+			app.MetricsPort, c.MQTT.Port)
+	}
+
+	// Validate timing intervals are reasonable
+	if app.PerformanceSummaryInterval < 0 {
+		return fmt.Errorf("application.performance_summary_interval must be non-negative (got %d)", app.PerformanceSummaryInterval)
+	}
+	if app.ErrorGracePeriod < 0 {
+		return fmt.Errorf("application.error_grace_period must be non-negative (got %d)", app.ErrorGracePeriod)
+	}
+	if app.MaxPublishInterval < 0 {
+		return fmt.Errorf("application.max_publish_interval must be non-negative (got %d)", app.MaxPublishInterval)
+	}
+
+	// Validate relationships between timing values
+	if app.ErrorGracePeriod > 0 && app.MaxPublishInterval > 0 {
+		if app.ErrorGracePeriod > app.MaxPublishInterval {
+			logger.LogWarn("⚠️  application.error_grace_period (%ds) is greater than max_publish_interval (%ds) - may cause premature offline detection",
+				app.ErrorGracePeriod, app.MaxPublishInterval)
+		}
+	}
+
+	return nil
 }

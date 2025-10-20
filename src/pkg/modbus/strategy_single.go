@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"mqtt-modbus-bridge/pkg/config"
+	"mqtt-modbus-bridge/pkg/errors"
 	"mqtt-modbus-bridge/pkg/gateway"
 )
 
@@ -40,11 +41,18 @@ func (s *SingleRegisterStrategy) Execute(ctx context.Context) (*CommandResult, e
 		5, // 5 second timeout
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read register at address 0x%04X: %w", s.register.Address, err)
+		modbusErr := errors.NewModbusError("read_single_register", err, s.slaveID, s.key)
+		modbusErr.FunctionCode = 0x03
+		modbusErr.Address = s.register.Address
+		return nil, modbusErr
 	}
 
 	if len(data) != 4 {
-		return nil, fmt.Errorf("expected 4 bytes, got %d bytes", len(data))
+		modbusErr := errors.NewModbusError("parse_single_register",
+			fmt.Errorf("expected 4 bytes, got %d bytes", len(data)),
+			s.slaveID, s.key)
+		modbusErr.Address = s.register.Address
+		return nil, modbusErr
 	}
 
 	// Parse float32 (Big Endian)

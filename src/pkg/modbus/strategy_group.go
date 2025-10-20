@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"mqtt-modbus-bridge/pkg/config"
+	"mqtt-modbus-bridge/pkg/errors"
 	"mqtt-modbus-bridge/pkg/gateway"
 	"strings"
 )
@@ -90,14 +91,19 @@ func (s *GroupRegisterStrategy) Execute(ctx context.Context) (map[string]*Comman
 		5, // 5 second timeout
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read register group '%s' at address 0x%04X: %w",
-			s.groupKey, s.groupConfig.StartAddress, err)
+		modbusErr := errors.NewModbusError("read_register_group", err, s.slaveID, s.groupKey)
+		modbusErr.FunctionCode = s.groupConfig.FunctionCode
+		modbusErr.Address = s.groupConfig.StartAddress
+		return nil, modbusErr
 	}
 
 	expectedBytes := int(s.groupConfig.RegisterCount) * 2 // Each register is 2 bytes
 	if len(data) != expectedBytes {
-		return nil, fmt.Errorf("expected %d bytes for group '%s', got %d bytes",
-			expectedBytes, s.groupKey, len(data))
+		modbusErr := errors.NewModbusError("parse_register_group",
+			fmt.Errorf("expected %d bytes for group '%s', got %d bytes", expectedBytes, s.groupKey, len(data)),
+			s.slaveID, s.groupKey)
+		modbusErr.Address = s.groupConfig.StartAddress
+		return nil, modbusErr
 	}
 
 	// Parse each register from the group data
@@ -108,8 +114,11 @@ func (s *GroupRegisterStrategy) Execute(ctx context.Context) (map[string]*Comman
 
 		// Ensure we have enough data
 		if byteOffset+4 > len(data) {
-			return nil, fmt.Errorf("register '%s' offset %d exceeds group data length %d",
-				regWithKey.Key, byteOffset, len(data))
+			modbusErr := errors.NewModbusError("parse_register_offset",
+				fmt.Errorf("register '%s' offset %d exceeds group data length %d", regWithKey.Key, byteOffset, len(data)),
+				s.slaveID, regWithKey.Key)
+			modbusErr.Address = reg.Address
+			return nil, modbusErr
 		}
 
 		// Extract 4 bytes for float32
