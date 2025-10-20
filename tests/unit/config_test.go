@@ -229,3 +229,256 @@ logging:
 		t.Errorf("Expected max 250.0, got %.1f", *reg.Max)
 	}
 }
+
+// TestPortConflictValidation tests port conflict detection
+func TestPortConflictValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "Valid - Different ports",
+			config: `
+version: "1.0"
+mqtt:
+  broker: "localhost"
+  port: 1883
+  gateway:
+    mac: "00:11:22:33:44:55"
+    cmd_topic: "cmd"
+    data_topic: "data"
+homeassistant:
+  discovery_prefix: "homeassistant"
+modbus:
+  slave_id: 1
+  poll_interval: 5000
+  register_delay: 100
+  energy_delay: 300000
+  timeout: 2000
+application:
+  health_check_port: 8080
+  metrics_port: 9090
+registers:
+  test:
+    name: "test"
+    address: 0x2000
+    unit: "V"
+    device_class: "voltage"
+    state_class: "measurement"
+    ha_topic: "ha/test"
+logging:
+  level: "info"
+`,
+			expectError: false,
+		},
+		{
+			name: "Invalid - Health and Metrics same port",
+			config: `
+version: "1.0"
+mqtt:
+  broker: "localhost"
+  port: 1883
+  gateway:
+    mac: "00:11:22:33:44:55"
+    cmd_topic: "cmd"
+    data_topic: "data"
+homeassistant:
+  discovery_prefix: "homeassistant"
+modbus:
+  slave_id: 1
+  poll_interval: 5000
+  register_delay: 100
+  energy_delay: 300000
+  timeout: 2000
+application:
+  health_check_port: 8080
+  metrics_port: 8080
+registers:
+  test:
+    name: "test"
+    address: 0x2000
+    unit: "V"
+    device_class: "voltage"
+    state_class: "measurement"
+    ha_topic: "ha/test"
+logging:
+  level: "info"
+`,
+			expectError: true,
+			errorMsg:    "cannot use the same port",
+		},
+		{
+			name: "Invalid - Health port conflicts with MQTT",
+			config: `
+version: "1.0"
+mqtt:
+  broker: "localhost"
+  port: 1883
+  gateway:
+    mac: "00:11:22:33:44:55"
+    cmd_topic: "cmd"
+    data_topic: "data"
+homeassistant:
+  discovery_prefix: "homeassistant"
+modbus:
+  slave_id: 1
+  poll_interval: 5000
+  register_delay: 100
+  energy_delay: 300000
+  timeout: 2000
+application:
+  health_check_port: 1883
+  metrics_port: 0
+registers:
+  test:
+    name: "test"
+    address: 0x2000
+    unit: "V"
+    device_class: "voltage"
+    state_class: "measurement"
+    ha_topic: "ha/test"
+logging:
+  level: "info"
+`,
+			expectError: true,
+			errorMsg:    "conflicts with mqtt.port",
+		},
+		{
+			name: "Invalid - Metrics port conflicts with MQTT",
+			config: `
+version: "1.0"
+mqtt:
+  broker: "localhost"
+  port: 1883
+  gateway:
+    mac: "00:11:22:33:44:55"
+    cmd_topic: "cmd"
+    data_topic: "data"
+homeassistant:
+  discovery_prefix: "homeassistant"
+modbus:
+  slave_id: 1
+  poll_interval: 5000
+  register_delay: 100
+  energy_delay: 300000
+  timeout: 2000
+application:
+  health_check_port: 0
+  metrics_port: 1883
+registers:
+  test:
+    name: "test"
+    address: 0x2000
+    unit: "V"
+    device_class: "voltage"
+    state_class: "measurement"
+    ha_topic: "ha/test"
+logging:
+  level: "info"
+`,
+			expectError: true,
+			errorMsg:    "conflicts with mqtt.port",
+		},
+		{
+			name: "Invalid - Port out of range",
+			config: `
+version: "1.0"
+mqtt:
+  broker: "localhost"
+  port: 70000
+  gateway:
+    mac: "00:11:22:33:44:55"
+    cmd_topic: "cmd"
+    data_topic: "data"
+homeassistant:
+  discovery_prefix: "homeassistant"
+modbus:
+  slave_id: 1
+  poll_interval: 5000
+  register_delay: 100
+  energy_delay: 300000
+  timeout: 2000
+registers:
+  test:
+    name: "test"
+    address: 0x2000
+    unit: "V"
+    device_class: "voltage"
+    state_class: "measurement"
+    ha_topic: "ha/test"
+logging:
+  level: "info"
+`,
+			expectError: true,
+			errorMsg:    "must be between 1 and 65535",
+		},
+		{
+			name: "Valid - Metrics disabled (port 0)",
+			config: `
+version: "1.0"
+mqtt:
+  broker: "localhost"
+  port: 1883
+  gateway:
+    mac: "00:11:22:33:44:55"
+    cmd_topic: "cmd"
+    data_topic: "data"
+homeassistant:
+  discovery_prefix: "homeassistant"
+modbus:
+  slave_id: 1
+  poll_interval: 5000
+  register_delay: 100
+  energy_delay: 300000
+  timeout: 2000
+application:
+  health_check_port: 8080
+  metrics_port: 0
+registers:
+  test:
+    name: "test"
+    address: 0x2000
+    unit: "V"
+    device_class: "voltage"
+    state_class: "measurement"
+    ha_topic: "ha/test"
+logging:
+  level: "info"
+`,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := config.LoadConfigFromString(tt.config)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error containing '%s', got nil", tt.errorMsg)
+				} else if tt.errorMsg != "" {
+					// Check if error message contains expected substring
+					errStr := err.Error()
+					if len(errStr) > 0 && len(tt.errorMsg) > 0 {
+						found := false
+						for i := 0; i <= len(errStr)-len(tt.errorMsg); i++ {
+							if errStr[i:i+len(tt.errorMsg)] == tt.errorMsg {
+								found = true
+								break
+							}
+						}
+						if !found {
+							t.Errorf("Expected error containing '%s', got '%s'", tt.errorMsg, errStr)
+						}
+					}
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error, got: %v", err)
+				}
+			}
+		})
+	}
+}
