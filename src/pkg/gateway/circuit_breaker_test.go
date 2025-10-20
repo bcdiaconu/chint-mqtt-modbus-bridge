@@ -159,7 +159,7 @@ func TestCircuitBreakerRecovery(t *testing.T) {
 
 	// Fail to open circuit
 	for i := 0; i < 2; i++ {
-		cbGateway.SendCommandAndWaitForResponse(ctx, 1, 0x03, 0x2000, 2, 5)
+		_, _ = cbGateway.SendCommandAndWaitForResponse(ctx, 1, 0x03, 0x2000, 2, 5)
 	}
 
 	if !cbGateway.circuitBreaker.IsOpen() {
@@ -228,7 +228,7 @@ func TestCircuitBreakerGetState(t *testing.T) {
 	ctx := context.Background()
 	mock.shouldFail = true
 	for i := 0; i < 2; i++ {
-		cbGateway.SendCommandAndWaitForResponse(ctx, 1, 0x03, 0x2000, 2, 5)
+		_, _ = cbGateway.SendCommandAndWaitForResponse(ctx, 1, 0x03, 0x2000, 2, 5)
 	}
 
 	// State should be open
