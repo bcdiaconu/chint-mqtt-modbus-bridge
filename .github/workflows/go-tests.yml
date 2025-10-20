@@ -33,15 +33,16 @@ jobs:
       run: go test ./unit/... -v -coverprofile=unit-coverage.out
 
     - name: Run integration tests
-      working-directory: ./tests
+      working-directory: ./src
       run: go test ./integration/... -v -coverprofile=integration-coverage.out
 
     - name: Generate coverage report
-      working-directory: ./tests
       run: |
+        cd tests
         go tool cover -func=unit-coverage.out > unit-coverage.txt
-        go tool cover -func=integration-coverage.out > integration-coverage.txt
         cat unit-coverage.txt
+        cd ../src
+        go tool cover -func=integration-coverage.out > integration-coverage.txt
         cat integration-coverage.txt
 
     - name: Upload coverage reports
@@ -50,9 +51,9 @@ jobs:
         name: coverage-reports
         path: |
           tests/unit-coverage.out
-          tests/integration-coverage.out
           tests/unit-coverage.txt
-          tests/integration-coverage.txt
+          src/integration-coverage.out
+          src/integration-coverage.txt
 
     - name: Build application
       working-directory: ./src

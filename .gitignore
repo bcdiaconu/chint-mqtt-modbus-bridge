@@ -32,6 +32,10 @@ config.yaml
 
 # Test output
 coverage.out
+unit-coverage.out
+integration-coverage.out
+*-coverage.txt
+integration-coverage
 
 # Go modules cache
 .gomodcache/
