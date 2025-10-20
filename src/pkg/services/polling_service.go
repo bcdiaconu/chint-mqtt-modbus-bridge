@@ -22,6 +22,7 @@ type PollingService struct {
 	diagnosticManager  *diagnostics.DeviceManager
 	config             *config.Config
 	performanceTracker *metrics.PerformanceTracker
+	prometheusMetrics  *metrics.PrometheusMetrics
 	lastPublishTime    map[string]time.Time
 }
 
@@ -32,6 +33,7 @@ func NewPollingService(
 	healthMonitor *health.GatewayHealthMonitor,
 	diagnosticManager *diagnostics.DeviceManager,
 	cfg *config.Config,
+	prometheusMetrics *metrics.PrometheusMetrics,
 ) *PollingService {
 	summaryInterval := time.Duration(cfg.Application.PerformanceSummaryInterval) * time.Second
 	return &PollingService{
@@ -41,6 +43,7 @@ func NewPollingService(
 		diagnosticManager:  diagnosticManager,
 		config:             cfg,
 		performanceTracker: metrics.NewPerformanceTracker(summaryInterval),
+		prometheusMetrics:  prometheusMetrics,
 		lastPublishTime:    make(map[string]time.Time),
 	}
 }
@@ -85,6 +88,12 @@ func (s *PollingService) ExecuteAndPublish(ctx context.Context) {
 // handleExecutionError handles errors during strategy execution
 func (s *PollingService) handleExecutionError(ctx context.Context, err error) {
 	s.performanceTracker.RecordError()
+
+	// Record Prometheus metrics (if enabled)
+	if s.prometheusMetrics != nil {
+		s.prometheusMetrics.IncrementModbusErrors()
+	}
+
 	s.recordError(ctx)
 
 	logger.LogError("❌ Strategy execution error: %v", err)
@@ -118,6 +127,13 @@ func (s *PollingService) handleExecutionSuccess(ctx context.Context, results map
 
 	// Success - mark gateway as healthy
 	s.performanceTracker.RecordSuccessBatch(len(results))
+
+	// Record Prometheus metrics (if enabled)
+	if s.prometheusMetrics != nil {
+		s.prometheusMetrics.IncrementModbusReads()
+		s.prometheusMetrics.ObserveModbusReadDuration(responseTime)
+	}
+
 	s.recordSuccess(ctx)
 
 	// Print summary if interval has passed
@@ -136,9 +152,17 @@ func (s *PollingService) publishResults(ctx context.Context, results map[string]
 		// Publish to Home Assistant
 		if pubErr := s.publisher.PublishSensorState(ctx, result); pubErr != nil {
 			logger.LogError("⚠️ Error publishing sensor state for %s: %v", key, pubErr)
+			// Record MQTT error (if metrics enabled)
+			if s.prometheusMetrics != nil {
+				s.prometheusMetrics.IncrementMQTTErrors()
+			}
 		} else {
 			// Update last publish time for successful publications
 			s.lastPublishTime[key] = time.Now()
+			// Record MQTT success (if metrics enabled)
+			if s.prometheusMetrics != nil {
+				s.prometheusMetrics.IncrementMQTTPublishes()
+			}
 		}
 	}
 
@@ -171,6 +195,11 @@ func (s *PollingService) recordError(ctx context.Context) {
 			s.healthMonitor.GetConsecutiveErrors(),
 			s.healthMonitor.GetTimeSinceFirstError().Seconds())
 
+		// Update Prometheus metrics (if enabled)
+		if s.prometheusMetrics != nil {
+			s.prometheusMetrics.SetGatewayStatus(false)
+		}
+
 		// Publish offline status
 		if err := s.publisher.PublishStatusOffline(ctx); err != nil {
 			logger.LogError("⚠️ Error publishing offline status: %v", err)
@@ -186,6 +215,11 @@ func (s *PollingService) recordSuccess(ctx context.Context) {
 	if !s.healthMonitor.IsOnline() {
 		s.healthMonitor.MarkOnline()
 		logger.LogInfo("🟢 Gateway marked as ONLINE - functionality restored")
+
+		// Update Prometheus metrics (if enabled)
+		if s.prometheusMetrics != nil {
+			s.prometheusMetrics.SetGatewayStatus(true)
+		}
 
 		// Publish online status
 		if err := s.publisher.PublishStatusOnline(ctx); err != nil {
