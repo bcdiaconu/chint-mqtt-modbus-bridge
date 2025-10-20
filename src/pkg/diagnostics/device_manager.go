@@ -115,16 +115,37 @@ func (m *DeviceManager) PublishDiscoveryForAllDevices(ctx context.Context) error
 
 		// Get Home Assistant device ID (using device key as fallback)
 		haDeviceID := deviceKey
-		if device.HomeAssistant.DeviceID != "" {
+		if device.HomeAssistant != nil && device.HomeAssistant.DeviceID != "" {
 			haDeviceID = device.HomeAssistant.DeviceID
+		}
+
+		// Get manufacturer and model with proper fallbacks
+		manufacturer := device.Metadata.Manufacturer
+		if manufacturer == "" {
+			manufacturer = "Unknown"
+		}
+
+		model := device.Metadata.Model
+		if model == "" {
+			model = "Unknown"
+		}
+
+		// Override with HomeAssistant config if provided
+		if device.HomeAssistant != nil {
+			if device.HomeAssistant.Manufacturer != "" {
+				manufacturer = device.HomeAssistant.Manufacturer
+			}
+			if device.HomeAssistant.Model != "" {
+				model = device.HomeAssistant.Model
+			}
 		}
 
 		// Build device info
 		deviceInfo := &mqtt.DeviceInfo{
 			Name:         device.Metadata.Name,
 			Identifiers:  []string{haDeviceID},
-			Manufacturer: device.Metadata.Manufacturer,
-			Model:        device.Metadata.Model,
+			Manufacturer: manufacturer,
+			Model:        model,
 		}
 
 		// Publish device diagnostic discovery
