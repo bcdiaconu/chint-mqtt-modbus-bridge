@@ -8,6 +8,7 @@ import (
 	"mqtt-modbus-bridge/pkg/config"
 	"mqtt-modbus-bridge/pkg/errors"
 	"mqtt-modbus-bridge/pkg/gateway"
+	"mqtt-modbus-bridge/pkg/logger"
 	"strings"
 )
 
@@ -81,7 +82,13 @@ func (s *GroupRegisterStrategy) GetRegisters() []RegisterWithKey {
 func (s *GroupRegisterStrategy) Execute(ctx context.Context) (map[string]*CommandResult, error) {
 	results := make(map[string]*CommandResult)
 
+	// Log group execution start for debugging sequential execution
+	logger.LogTrace("🔄 Executing group '%s' (Slave %d, Addr 0x%04X, Count %d)",
+		s.groupKey, s.slaveID, s.groupConfig.StartAddress, s.groupConfig.RegisterCount)
+
 	// Read the entire group in one Modbus transaction
+	// NOTE: SendCommandAndWaitForResponse uses commandMutex to ensure
+	// SEQUENTIAL execution - no overlap between different slaves or groups
 	data, err := s.gateway.SendCommandAndWaitForResponse(
 		ctx,
 		s.slaveID,
@@ -91,11 +98,14 @@ func (s *GroupRegisterStrategy) Execute(ctx context.Context) (map[string]*Comman
 		5, // 5 second timeout
 	)
 	if err != nil {
+		logger.LogWarn("❌ Group '%s' (Slave %d) read failed: %v", s.groupKey, s.slaveID, err)
 		modbusErr := errors.NewModbusError("read_register_group", err, s.slaveID, s.groupKey)
 		modbusErr.FunctionCode = s.groupConfig.FunctionCode
 		modbusErr.Address = s.groupConfig.StartAddress
 		return nil, modbusErr
 	}
+
+	logger.LogTrace("✅ Group '%s' (Slave %d) read successful (%d bytes)", s.groupKey, s.slaveID, len(data))
 
 	expectedBytes := int(s.groupConfig.RegisterCount) * 2 // Each register is 2 bytes
 	if len(data) != expectedBytes {

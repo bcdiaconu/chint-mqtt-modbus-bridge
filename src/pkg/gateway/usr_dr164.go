@@ -22,6 +22,10 @@ type USRGateway struct {
 	mu           sync.RWMutex
 	connected    bool
 	commandMutex sync.Mutex // Synchronize command/response pairs
+
+	// Track expected response for validation
+	expectedSlaveID      uint8
+	expectedFunctionCode uint8
 }
 
 // NewUSRGateway creates a new USR-DR164 gateway
@@ -257,24 +261,49 @@ func (g *USRGateway) onMessage(client mqtt.Client, msg mqtt.Message) {
 		return
 	}
 
-	// Extract useful data from Modbus response
-	if len(data) >= 5 {
-		// Skip Slave ID, Function Code and Byte Count
-		// For Read Holding Registers, data starts at position 3
-		if data[1] == 0x03 { // Function Code 03
-			byteCount := int(data[2])
-			if len(data) >= 3+byteCount {
-				actualData := data[3 : 3+byteCount]
-				logger.LogDebug("Gateway received response: %02X", actualData)
+	// Validate minimum message length
+	if len(data) < 5 {
+		logger.LogWarn("Received message too short (len=%d), ignoring: %02X", len(data), data)
+		return
+	}
 
-				// Send data to channel
-				select {
-				case g.responseChan <- actualData:
-				default:
-					logger.LogWarn("Response channel full, response ignored")
-				}
+	// Extract Slave ID and Function Code for validation
+	receivedSlaveID := data[0]
+	receivedFunctionCode := data[1]
+
+	// Validate this is the response we're expecting (protect against out-of-order responses)
+	g.commandMutex.Lock()
+	expectedSlaveID := g.expectedSlaveID
+	expectedFunctionCode := g.expectedFunctionCode
+	g.commandMutex.Unlock()
+
+	if receivedSlaveID != expectedSlaveID || receivedFunctionCode != expectedFunctionCode {
+		logger.LogWarn("Received unexpected response (Slave=%d, Func=0x%02X) but expecting (Slave=%d, Func=0x%02X), ignoring",
+			receivedSlaveID, receivedFunctionCode, expectedSlaveID, expectedFunctionCode)
+		return
+	}
+
+	// Extract useful data from Modbus response
+	// For Read Holding Registers (0x03), data starts at position 3
+	if receivedFunctionCode == 0x03 { // Function Code 03
+		byteCount := int(data[2])
+		if len(data) >= 3+byteCount+2 { // +2 for CRC
+			actualData := data[3 : 3+byteCount]
+			logger.LogDebug("Gateway received valid response from Slave %d: %02X", receivedSlaveID, actualData)
+
+			// Send data to channel (non-blocking to prevent deadlock)
+			select {
+			case g.responseChan <- actualData:
+				// Successfully sent
+			default:
+				logger.LogWarn("Response channel full, response ignored (Slave=%d, Func=0x%02X)",
+					receivedSlaveID, receivedFunctionCode)
 			}
+		} else {
+			logger.LogWarn("Invalid byte count in response: expected %d bytes but message too short", byteCount)
 		}
+	} else {
+		logger.LogWarn("Unsupported function code in response: 0x%02X", receivedFunctionCode)
 	}
 }
 
@@ -323,11 +352,37 @@ func (g *USRGateway) SendDiagnosticCommand(ctx context.Context) error {
 }
 
 // SendCommandAndWaitForResponse sends a command and waits for response atomically
-// This prevents racing conditions between multiple commands
+// This prevents racing conditions between multiple commands and ensures SEQUENTIAL execution
+//
+// CRITICAL: This method uses commandMutex to ensure:
+// 1. Only ONE Modbus transaction at a time (no overlap between slaves/groups)
+// 2. Each request gets its CORRECT response (validated by SlaveID + FunctionCode)
+// 3. Stale responses from timed-out requests are cleared before new requests
+//
+// Execution flow:
+//
+//	Lock commandMutex → Clear stale responses → Set expected response params →
+//	Send command → Wait for matching response → Unlock → 50ms delay
+//
+// This guarantees that register groups from different slaves (e.g., Slave 1 and Slave 11)
+// are executed SEQUENTIALLY and cannot interfere with each other.
 func (g *USRGateway) SendCommandAndWaitForResponse(ctx context.Context, slaveID uint8, functionCode uint8, address uint16, count uint16, timeoutSeconds int) ([]byte, error) {
 	// Lock to ensure only one command/response cycle at a time
 	g.commandMutex.Lock()
 	defer g.commandMutex.Unlock()
+
+	// Clear any stale responses from channel before sending new command
+	// This prevents receiving old responses for new requests
+	select {
+	case <-g.responseChan:
+		logger.LogWarn("Cleared stale response from channel before new request")
+	default:
+		// Channel is empty, good to go
+	}
+
+	// Set expected response parameters for validation in onMessage
+	g.expectedSlaveID = slaveID
+	g.expectedFunctionCode = functionCode
 
 	// Send command
 	if err := g.SendCommand(ctx, slaveID, functionCode, address, count); err != nil {
