@@ -26,8 +26,7 @@ type DeviceMetadata struct {
 
 // RTUConfig contains RTU/Physical layer configuration
 type RTUConfig struct {
-	SlaveID      uint8 `yaml:"slave_id"`                // Modbus device ID (1-247)
-	PollInterval int   `yaml:"poll_interval,omitempty"` // Override global poll interval (ms)
+	SlaveID uint8 `yaml:"slave_id"` // Modbus device ID (1-247)
 }
 
 // ModbusDeviceConfig contains Modbus protocol layer configuration
@@ -65,11 +64,6 @@ func (d *Device) GetName() string {
 // GetSlaveID returns the RTU slave ID
 func (d *Device) GetSlaveID() uint8 {
 	return d.RTU.SlaveID
-}
-
-// GetPollInterval returns the poll interval (0 if not set, use global)
-func (d *Device) GetPollInterval() int {
-	return d.RTU.PollInterval
 }
 
 // IsEnabled returns whether the device is enabled

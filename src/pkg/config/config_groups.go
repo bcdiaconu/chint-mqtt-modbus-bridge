@@ -14,6 +14,7 @@ type RegisterGroup struct {
 	StartAddress  uint16          `yaml:"start_address"`  // First register address
 	RegisterCount uint16          `yaml:"register_count"` // Number of 16-bit registers
 	Enabled       bool            `yaml:"enabled"`        // Enable/disable this group
+	PollInterval  int             `yaml:"poll_interval"`  // Polling interval in milliseconds (per group)
 	Registers     []GroupRegister `yaml:"registers"`      // Registers in this group
 }
 
@@ -59,6 +60,12 @@ func (g *RegisterGroup) Validate() error {
 	}
 	if len(g.Registers) == 0 {
 		return fmt.Errorf("no registers defined for group '%s'", g.Name)
+	}
+	if g.PollInterval <= 0 {
+		return fmt.Errorf("poll_interval must be positive for register group '%s' (got %d ms)", g.Name, g.PollInterval)
+	}
+	if g.PollInterval > 300000 { // Max 5 minutes
+		return fmt.Errorf("poll_interval too large for register group '%s' (got %d ms, max 300000 ms)", g.Name, g.PollInterval)
 	}
 
 	// Validate that offsets are within the read range

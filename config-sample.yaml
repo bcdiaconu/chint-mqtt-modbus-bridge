@@ -61,7 +61,6 @@ devices:
     
     rtu:
       slave_id: 11
-      poll_interval: 1000
     
     homeassistant:
       device_id: "energy_meter_mains"
@@ -76,6 +75,7 @@ devices:
           start_address: 0x2000
           register_count: 34
           enabled: true
+          poll_interval: 1000  # Poll instant measurements every 1 second
           registers:
             - key: "voltage"
               name: "Voltage"
@@ -139,6 +139,7 @@ devices:
           start_address: 0x4000
           register_count: 22
           enabled: true
+          poll_interval: 5000  # Poll energy counters every 5 seconds (less frequent)
           registers:
             - key: "energy_total"
               name: "Total Active Energy"
@@ -185,7 +186,6 @@ devices:
     
     rtu:
       slave_id: 1                     # Different slave ID from main meter
-      poll_interval: 1000
     
     homeassistant:
       device_id: "energy_meter_lights"
@@ -200,6 +200,7 @@ devices:
           start_address: 0x2000
           register_count: 16
           enabled: true
+          poll_interval: 1000  # Poll instant measurements every 1 second
           registers:
             - key: "voltage"
               name: "Voltage"
@@ -264,6 +265,7 @@ devices:
           start_address: 0x4000
           register_count: 12
           enabled: true
+          poll_interval: 5000  # Poll energy counters every 5 seconds (less frequent)
           registers:
             - key: "energy_imported"
               name: "Imported Active Energy"
@@ -306,7 +308,6 @@ devices:
       enabled: true
     rtu:
       slave_id: 20
-      poll_interval: 2000
     homeassistant:
       device_id: "growatt_inverter_1"
       manufacturer: "Growatt New Energy"
@@ -319,6 +320,7 @@ devices:
           start_address: 0x0000
           register_count: 30
           enabled: true
+          poll_interval: 2000  # Poll inverter status every 2 seconds
           registers:
             - key: "pv_voltage"
               name: "PV Voltage"

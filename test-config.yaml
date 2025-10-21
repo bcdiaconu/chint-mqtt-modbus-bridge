@@ -34,7 +34,6 @@ devices:
     
     rtu:
       slave_id: 11
-      poll_interval: 2000
     
     homeassistant:
       device_id: "test_meter_001"
@@ -49,6 +48,7 @@ devices:
           start_address: 0x2000
           register_count: 10
           enabled: true
+          poll_interval: 2000  # Poll instant values every 2 seconds
           registers:
             - key: "voltage"
               name: "Voltage"

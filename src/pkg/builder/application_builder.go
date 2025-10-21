@@ -39,6 +39,7 @@ type GatewayInterface interface {
 // Enables mocking and testing
 type ExecutorInterface interface {
 	ExecuteAll(ctx context.Context) (map[string]*modbus.CommandResult, error)
+	ExecuteGroup(ctx context.Context, groupKey string) (map[string]*modbus.CommandResult, error)
 	RegisterFromDevices(devices map[string]config.Device) error
 }
 

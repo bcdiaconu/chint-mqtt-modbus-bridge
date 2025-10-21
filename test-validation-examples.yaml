@@ -125,6 +125,7 @@ devices:
           start_address: 0x2000
           register_count: 10
           enabled: true
+          poll_interval: 1000  # Poll instant values every 1 second
           registers:
             - key: "voltage"
               name: "Voltage"
@@ -151,6 +152,7 @@ devices:
           start_address: 0x2000
           register_count: 10
           enabled: true
+          poll_interval: 1000  # Poll instant values every 1 second
           registers:
             - key: "voltage"
               name: "Voltage"
@@ -179,6 +181,7 @@ devices:
           start_address: 0x0000
           register_count: 10
           enabled: true
+          poll_interval: 2000  # Poll inverter status every 2 seconds
           registers:
             - key: "pv_power"
               name: "PV Power"

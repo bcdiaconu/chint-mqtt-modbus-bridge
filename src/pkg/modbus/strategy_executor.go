@@ -18,7 +18,8 @@ type StrategyExecutor struct {
 	singleStrategies map[string]*SingleRegisterStrategy
 	groupStrategies  map[string]*GroupRegisterStrategy
 	calcStrategies   map[string]*CalculatedRegisterStrategy
-	executionOrder   []string // Order: groups first, then calculated
+	executionOrder   []string       // Order: groups first, then calculated
+	groupIntervals   map[string]int // groupKey -> poll_interval in milliseconds
 }
 
 // NewStrategyExecutor creates a new strategy executor
@@ -31,6 +32,7 @@ func NewStrategyExecutor(gw gateway.Gateway, discoveryPrefix string) *StrategyEx
 		groupStrategies:  make(map[string]*GroupRegisterStrategy),
 		calcStrategies:   make(map[string]*CalculatedRegisterStrategy),
 		executionOrder:   []string{},
+		groupIntervals:   make(map[string]int),
 	}
 }
 
@@ -109,8 +111,10 @@ func (e *StrategyExecutor) RegisterFromDevices(devices map[string]config.Device)
 
 			e.groupStrategies[fullGroupKey] = strategy
 			e.executionOrder = append(e.executionOrder, fullGroupKey)
+			e.groupIntervals[fullGroupKey] = group.PollInterval // Save poll interval
 
-			logger.LogInfo("✅ Registered group strategy: %s (%d registers)", fullGroupKey, len(registers))
+			logger.LogInfo("✅ Registered group strategy: %s (%d registers, poll_interval: %dms)",
+				fullGroupKey, len(registers), group.PollInterval)
 		}
 
 		// Register calculated value strategies (executed after groups)
@@ -188,6 +192,39 @@ func (e *StrategyExecutor) ExecuteAll(ctx context.Context) (map[string]*CommandR
 	}
 
 	return results, nil
+}
+
+// ExecuteGroup executes a single register group by key
+// Returns results for all registers in that group
+func (e *StrategyExecutor) ExecuteGroup(ctx context.Context, groupKey string) (map[string]*CommandResult, error) {
+	// Check if it's a group strategy
+	if groupStrategy, exists := e.groupStrategies[groupKey]; exists {
+		groupResults, err := groupStrategy.Execute(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute group strategy '%s': %w", groupKey, err)
+		}
+
+		logger.LogDebug("✅ Group '%s' executed: %d registers", groupKey, len(groupResults))
+		return groupResults, nil
+	}
+
+	// Check if it's a calculated strategy
+	if calcStrategy, exists := e.calcStrategies[groupKey]; exists {
+		result, err := calcStrategy.Execute(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute calculated strategy '%s': %w", groupKey, err)
+		}
+
+		// Return as a map with single result
+		return map[string]*CommandResult{groupKey: result}, nil
+	}
+
+	return nil, fmt.Errorf("strategy not found for key '%s'", groupKey)
+}
+
+// GetGroupIntervals returns the poll intervals for all registered groups
+func (e *StrategyExecutor) GetGroupIntervals() map[string]int {
+	return e.groupIntervals
 }
 
 // GetResult fetches a specific result (from cache or executes if needed)

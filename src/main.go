@@ -14,6 +14,7 @@ import (
 	"mqtt-modbus-bridge/pkg/modbus"
 	"mqtt-modbus-bridge/pkg/mqtt"
 	"mqtt-modbus-bridge/pkg/recovery"
+	"mqtt-modbus-bridge/pkg/scheduler"
 	"mqtt-modbus-bridge/pkg/topics"
 	"os"
 	"os/signal"
@@ -259,21 +260,29 @@ func (app *Application) Stop() {
 	logger.LogInfo("✅ MQTT-Modbus Bridge stopped")
 }
 
-// mainLoopNormalRegisters polling loop for normal registers (voltage, current, power, etc.)
+// mainLoopNormalRegisters polling loop using per-group scheduling
 func (app *Application) mainLoopNormalRegisters(ctx context.Context) {
-	ticker := time.NewTicker(time.Duration(app.config.Modbus.PollInterval) * time.Millisecond)
-	defer ticker.Stop()
+	// Get poll intervals for all groups
+	groupIntervals := app.executor.GetGroupIntervals()
 
-	logger.LogDebug("🔄 Registers polling started (interval: %dms)", app.config.Modbus.PollInterval)
+	// Create group scheduler
+	groupScheduler := scheduler.NewGroupScheduler(app.executor, groupIntervals)
 
-	for {
-		select {
-		case <-ctx.Done():
-			logger.LogDebug("🔄 Registers polling stopped")
-			return
-		case <-ticker.C:
-			logger.LogDebug("🔄 Polling tick - executing all strategies...")
-			app.executeAllStrategies(ctx)
+	// Start scheduler with callback for publishing results
+	groupScheduler.Start(ctx, func(ctx context.Context, results map[string]*modbus.CommandResult) {
+		app.publishGroupResults(ctx, results)
+	})
+}
+
+// publishGroupResults publishes results from a single group execution
+func (app *Application) publishGroupResults(ctx context.Context, results map[string]*modbus.CommandResult) {
+	// Publish each result to Home Assistant
+	for key, result := range results {
+		logger.LogTrace("� %s: %.3f %s", result.Name, result.Value, result.Unit)
+
+		// Publish to Home Assistant
+		if pubErr := app.publisher.PublishSensorState(ctx, result); pubErr != nil {
+			logger.LogError("⚠️ Error publishing sensor state for %s: %v", key, pubErr)
 		}
 	}
 }

@@ -30,7 +30,8 @@ A robust bridge between USR-DR164 Modbus-MQTT Gateway and Home Assistant, implem
 - **Device-Based Configuration**: Organize multiple Modbus devices with segregated metadata, RTU, Modbus, and Home Assistant sections
 - **Unique Device Validation**: Automatic validation of device keys, slave IDs, and Home Assistant device IDs
 - **Flexible Device IDs**: Optional `homeassistant.device_id` with automatic fallback to device key
-- **Per-Device Settings**: Individual poll intervals, manufacturer/model overrides, and register groups per device
+- **Per-Device Settings**: Flexible manufacturer/model overrides and register groups per device
+- **Per-Group Polling**: Each register group can have its own poll_interval for optimal performance (e.g., instant values every 1s, energy counters every 5s)
 - **Scalable Architecture**: Support for multiple energy meters, inverters, or other Modbus devices on the same RTU bus
 
 See [Configuration Documentation](docs/CONFIG.md) for details.
