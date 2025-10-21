@@ -18,6 +18,7 @@ import (
 	"mqtt-modbus-bridge/pkg/topics"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -276,6 +277,25 @@ func (app *Application) mainLoopNormalRegisters(ctx context.Context) {
 
 // publishGroupResults publishes results from a single group execution
 func (app *Application) publishGroupResults(ctx context.Context, results map[string]*modbus.CommandResult) {
+	// Extract device ID from first result key (format: deviceID_groupName_registerName)
+	// This is safe because all results in a group belong to the same device
+	var deviceID string
+	for key := range results {
+		// Extract device ID from key (e.g., "energy_meter_mains_instant_voltage" -> "energy_meter_mains")
+		parts := strings.Split(key, "_")
+		if len(parts) >= 3 {
+			// Take first 3 parts as device ID (energy_meter_mains or energy_meter_lights)
+			deviceID = strings.Join(parts[:3], "_")
+			break
+		}
+	}
+
+	// Record success for device diagnostics
+	if deviceID != "" && app.diagnosticManager != nil {
+		// Use a nominal response time since we don't track it per group
+		app.diagnosticManager.RecordSuccess(deviceID, 200*time.Millisecond)
+	}
+
 	// Publish each result to Home Assistant
 	for key, result := range results {
 		logger.LogTrace("� %s: %.3f %s", result.Name, result.Value, result.Unit)
