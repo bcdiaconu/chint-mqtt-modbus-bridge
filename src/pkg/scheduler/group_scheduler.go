@@ -107,8 +107,13 @@ func (s *GroupScheduler) checkAndExecuteGroups(ctx context.Context, callback fun
 func (s *GroupScheduler) executeGroup(ctx context.Context, groupKey string, callback func(context.Context, map[string]*modbus.CommandResult)) {
 	// CRITICAL: Lock to ensure only one group executes at a time
 	// This prevents concurrent Modbus requests that would cause race conditions
+	logger.LogTrace("🔒 Group '%s' trying to acquire execution lock...", groupKey)
 	s.executionMutex.Lock()
-	defer s.executionMutex.Unlock()
+	logger.LogTrace("✅ Group '%s' acquired execution lock", groupKey)
+	defer func() {
+		s.executionMutex.Unlock()
+		logger.LogTrace("🔓 Group '%s' released execution lock", groupKey)
+	}()
 
 	startTime := time.Now()
 

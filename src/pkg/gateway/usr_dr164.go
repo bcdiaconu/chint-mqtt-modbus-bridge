@@ -392,6 +392,17 @@ func (g *USRGateway) SendCommandAndWaitForResponse(ctx context.Context, slaveID 
 	// Wait for response
 	response, err := g.WaitForResponse(ctx, timeoutSeconds)
 	if err != nil {
+		// CRITICAL: After timeout, clear any stale response that might arrive late
+		// Otherwise it will be consumed by the next request, causing race conditions
+		go func() {
+			select {
+			case staleResp := <-g.responseChan:
+				logger.LogWarn("⚠️ Discarded late response after timeout: %d bytes from potential Slave %d",
+					len(staleResp), g.expectedSlaveID)
+			case <-time.After(2 * time.Second):
+				// No late response arrived within 2s, safe to proceed
+			}
+		}()
 		return nil, err
 	}
 

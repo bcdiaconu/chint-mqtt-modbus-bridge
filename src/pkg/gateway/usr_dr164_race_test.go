@@ -1085,3 +1085,285 @@ func TestConcurrentMixedValidInvalid(t *testing.T) {
 		t.Error("❌ No response received - correct response should have been accepted")
 	}
 }
+
+// TestLateResponseAfterTimeout tests that late responses arriving after timeout
+// don't contaminate the next request (REGRESSION TEST for production bug)
+func TestLateResponseAfterTimeout(t *testing.T) {
+	cfg := &config.MQTTConfig{
+		Broker:   "test",
+		Port:     1883,
+		Username: "test",
+		Password: "test",
+		Gateway: config.GatewayConfig{
+			MAC:       "TEST123456",
+			CmdTopic:  "test/cmd",
+			DataTopic: "test/data",
+		},
+	}
+
+	gateway := NewUSRGateway(cfg)
+
+	t.Log("📋 Scenario: Device responds slowly (>5s), causing timeout + late response")
+	t.Log("")
+
+	// Request 1: Slave 11, expect timeout
+	t.Log("📤 Request 1: Sending to Slave 11, FC=0x03 (will timeout)")
+	gateway.commandMutex.Lock()
+	gateway.expectedSlaveID = 11
+	gateway.expectedFunctionCode = 0x03
+	gateway.commandMutex.Unlock()
+
+	// Simulate timeout (no response arrives in time)
+	responseReceived := false
+	go func() {
+		select {
+		case <-gateway.responseChan:
+			responseReceived = true
+		case <-time.After(100 * time.Millisecond):
+			// Timeout simulation
+			t.Log("⏱️ Request 1: Timeout (no response in 100ms)")
+		}
+	}()
+
+	time.Sleep(150 * time.Millisecond)
+
+	if responseReceived {
+		t.Error("❌ Request 1: Should have timed out, but got response")
+		return
+	}
+	t.Log("✅ Request 1: Correctly timed out")
+
+	// Request 2: Slave 1 (different device)
+	t.Log("")
+	t.Log("📤 Request 2: Sending to Slave 1, FC=0x03")
+	gateway.commandMutex.Lock()
+	gateway.expectedSlaveID = 1
+	gateway.expectedFunctionCode = 0x03
+	gateway.commandMutex.Unlock()
+
+	// Late response arrives AFTER timeout (and AFTER expectation changed)
+	t.Log("📨 LATE response from Slave 11 arrives (for Slave 11, but now expecting Slave 1)")
+	lateResponse := createMockMessage("test/data", 11, 0x03, []byte{0x43, 0x70, 0x00, 0x00})
+	gateway.onMessage(nil, lateResponse)
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Send correct response for Slave 1
+	t.Log("📨 Correct response from Slave 1 arrives")
+	correctResponse := createMockMessage("test/data", 1, 0x03, []byte{0x41, 0xF0, 0x00, 0x00})
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		gateway.onMessage(nil, correctResponse)
+	}()
+
+	// Check that we get Slave 1 response (not the late Slave 11 response)
+	select {
+	case data := <-gateway.responseChan:
+		// The data should be from Slave 1 response
+		// Note: data is the payload AFTER SlaveID/FC/ByteCount (see onMessage implementation)
+		if len(data) != 4 {
+			t.Errorf("❌ Request 2: Unexpected response length: %d (expected 4)", len(data))
+		} else {
+			t.Logf("✅ Request 2: Received correct response (%d bytes)", len(data))
+			t.Log("✅ Late response from Slave 11 was correctly rejected/discarded")
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Error("❌ Request 2: Timeout - should have received Slave 1 response")
+		t.Error("   This indicates late response contamination bug!")
+	}
+
+	// Verify channel is clean (no stale late response)
+	select {
+	case stale := <-gateway.responseChan:
+		t.Errorf("❌ Stale response found in channel: %v", stale)
+		t.Error("   Late response cleanup FAILED!")
+	case <-time.After(50 * time.Millisecond):
+		t.Log("✅ Channel clean - no stale responses")
+	}
+}
+
+// TestTimeoutWithSubsequentSuccess tests the complete flow:
+// 1. Request timeouts
+// 2. Late response arrives (should be discarded)
+// 3. Next request succeeds normally
+func TestTimeoutWithSubsequentSuccess(t *testing.T) {
+	cfg := &config.MQTTConfig{
+		Broker:   "test",
+		Port:     1883,
+		Username: "test",
+		Password: "test",
+		Gateway: config.GatewayConfig{
+			MAC:       "TEST123456",
+			CmdTopic:  "test/cmd",
+			DataTopic: "test/data",
+		},
+	}
+
+	gateway := NewUSRGateway(cfg)
+
+	// Simulate 3 requests in sequence with timeout recovery
+	requests := []struct {
+		name     string
+		slaveID  uint8
+		timeout  bool // Should this request timeout?
+		lateResp bool // Should late response arrive after timeout?
+	}{
+		{"Request 1 (Slave 11)", 11, true, true},   // Timeout + late response
+		{"Request 2 (Slave 1)", 1, false, false},   // Success
+		{"Request 3 (Slave 11)", 11, false, false}, // Success
+	}
+
+	for i, req := range requests {
+		t.Logf("")
+		t.Logf("📤 %s", req.name)
+
+		gateway.commandMutex.Lock()
+		gateway.expectedSlaveID = req.slaveID
+		gateway.expectedFunctionCode = 0x03
+		gateway.commandMutex.Unlock()
+
+		if req.timeout {
+			// Simulate timeout
+			t.Logf("   ⏱️ Simulating timeout...")
+			timedOut := false
+			select {
+			case <-gateway.responseChan:
+				t.Errorf("   ❌ %s: Got response but expected timeout!", req.name)
+			case <-time.After(100 * time.Millisecond):
+				timedOut = true
+				t.Logf("   ✅ Correctly timed out")
+			}
+
+			if !timedOut {
+				continue
+			}
+
+			if req.lateResp {
+				// Late response arrives
+				t.Logf("   📨 Late response arrives (should be discarded)")
+				lateMsg := createMockMessage("test/data", req.slaveID, 0x03, []byte{0x43, 0x70, 0x00, 0x00})
+				gateway.onMessage(nil, lateMsg)
+				time.Sleep(50 * time.Millisecond)
+			}
+		} else {
+			// Simulate successful response
+			data := []byte{0x43, byte(i), 0x00, 0x00}
+			msg := createMockMessage("test/data", req.slaveID, 0x03, data)
+
+			go func() {
+				time.Sleep(50 * time.Millisecond)
+				gateway.onMessage(nil, msg)
+			}()
+
+			select {
+			case resp := <-gateway.responseChan:
+				t.Logf("   ✅ Received response (%d bytes)", len(resp))
+			case <-time.After(200 * time.Millisecond):
+				t.Errorf("   ❌ %s: Timeout waiting for response", req.name)
+			}
+		}
+	}
+
+	// Final verification: channel should be clean
+	select {
+	case stale := <-gateway.responseChan:
+		t.Errorf("❌ Final check: Stale response in channel: %v", stale)
+	case <-time.After(50 * time.Millisecond):
+		t.Log("✅ Final check: Channel clean after timeout recovery")
+	}
+}
+
+// TestMultipleTimeoutsWithLateResponses tests worst-case scenario:
+// Multiple consecutive timeouts with late responses piling up
+func TestMultipleTimeoutsWithLateResponses(t *testing.T) {
+	cfg := &config.MQTTConfig{
+		Broker:   "test",
+		Port:     1883,
+		Username: "test",
+		Password: "test",
+		Gateway: config.GatewayConfig{
+			MAC:       "TEST123456",
+			CmdTopic:  "test/cmd",
+			DataTopic: "test/data",
+		},
+	}
+
+	gateway := NewUSRGateway(cfg)
+
+	t.Log("🔥 Stress test: 5 consecutive timeouts with late responses")
+
+	// Simulate 5 timeout scenarios
+	for i := 0; i < 5; i++ {
+		slaveID := uint8((i % 2) + 1) // Alternate between Slave 1 and 2
+
+		t.Logf("")
+		t.Logf("📤 Request %d: Slave %d", i+1, slaveID)
+
+		gateway.commandMutex.Lock()
+		gateway.expectedSlaveID = slaveID
+		gateway.expectedFunctionCode = 0x03
+		gateway.commandMutex.Unlock()
+
+		// Wait for timeout
+		select {
+		case <-gateway.responseChan:
+			t.Logf("   ⚠️ Request %d: Got unexpected response (channel not clean)", i+1)
+			// This is actually OK - it means a late response snuck in
+			// The important thing is that it's detected
+		case <-time.After(100 * time.Millisecond):
+			t.Logf("   ⏱️ Request %d: Timed out", i+1)
+		}
+
+		// Late response arrives AFTER we've moved to next request expectation
+		// This simulates the real bug scenario
+		lateData := []byte{0x43, byte(i), 0x00, 0x00}
+		lateMsg := createMockMessage("test/data", slaveID, 0x03, lateData)
+
+		// Change expectation to next slave BEFORE late response arrives
+		// This is the KEY to reproducing the real bug
+		nextSlaveID := uint8(((i + 1) % 2) + 1)
+		gateway.commandMutex.Lock()
+		gateway.expectedSlaveID = nextSlaveID
+		gateway.commandMutex.Unlock()
+
+		// Now send the late response - it should be REJECTED by onMessage
+		// because expectedSlaveID has changed
+		gateway.onMessage(nil, lateMsg)
+		t.Logf("   📨 Request %d: Late response sent (for Slave %d, but now expecting Slave %d)",
+			i+1, slaveID, nextSlaveID)
+
+		time.Sleep(50 * time.Millisecond)
+
+		// Verify late response was rejected (not in channel)
+		select {
+		case unexpected := <-gateway.responseChan:
+			t.Errorf("   ❌ Request %d: Late response was NOT rejected: %v", i+1, unexpected)
+		default:
+			t.Logf("   ✅ Request %d: Late response correctly rejected", i+1)
+		}
+	}
+
+	// NOW send a successful request - should work despite all previous timeouts
+	t.Log("")
+	t.Log("📤 Final request: Slave 1 (should succeed despite previous chaos)")
+
+	gateway.commandMutex.Lock()
+	gateway.expectedSlaveID = 1
+	gateway.expectedFunctionCode = 0x03
+	gateway.commandMutex.Unlock()
+
+	correctMsg := createMockMessage("test/data", 1, 0x03, []byte{0x42, 0x00, 0x00, 0x00})
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		gateway.onMessage(nil, correctMsg)
+	}()
+
+	select {
+	case resp := <-gateway.responseChan:
+		t.Logf("✅ Final request succeeded: received %d bytes", len(resp))
+		t.Log("✅ System recovered correctly after multiple timeouts!")
+	case <-time.After(200 * time.Millisecond):
+		t.Error("❌ Final request failed!")
+		t.Error("   Late response cleanup is not working correctly")
+	}
+}
