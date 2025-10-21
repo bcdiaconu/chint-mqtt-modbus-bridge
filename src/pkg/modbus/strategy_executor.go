@@ -118,6 +118,15 @@ func (e *StrategyExecutor) RegisterFromDevices(devices map[string]config.Device)
 		}
 
 		// Register calculated value strategies (executed after groups)
+		// Calculated values use the same poll interval as the fastest group (instant values)
+		// to ensure they're updated frequently with latest cached data
+		fastestInterval := 1000 // Default 1 second
+		for _, group := range device.Modbus.RegisterGroups {
+			if group.PollInterval < fastestInterval {
+				fastestInterval = group.PollInterval
+			}
+		}
+
 		for _, calc := range device.CalculatedValues {
 			scaleFactor := calc.ScaleFactor
 			if scaleFactor == 0 {
@@ -144,6 +153,7 @@ func (e *StrategyExecutor) RegisterFromDevices(devices map[string]config.Device)
 
 			e.calcStrategies[calcKey] = strategy
 			e.executionOrder = append(e.executionOrder, calcKey)
+			e.groupIntervals[calcKey] = fastestInterval // Schedule calculated values at fastest interval
 
 			logger.LogInfo("✅ Registered calculated strategy: %s (formula: %s)", calcKey, calc.Formula)
 		}
