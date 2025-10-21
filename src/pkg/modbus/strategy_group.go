@@ -95,7 +95,7 @@ func (s *GroupRegisterStrategy) Execute(ctx context.Context) (map[string]*Comman
 		s.groupConfig.FunctionCode,
 		s.groupConfig.StartAddress,
 		s.groupConfig.RegisterCount,
-		5, // 5 second timeout
+		15, // 15 second timeout (increased from 5s due to slow gateway/device response times)
 	)
 	if err != nil {
 		logger.LogWarn("❌ Group '%s' (Slave %d) read failed: %v", s.groupKey, s.slaveID, err)

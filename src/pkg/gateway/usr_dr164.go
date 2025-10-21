@@ -21,11 +21,17 @@ type USRGateway struct {
 	responseChan chan []byte
 	mu           sync.RWMutex
 	connected    bool
-	commandMutex sync.Mutex // Synchronize command/response pairs
+	commandMutex sync.Mutex // Synchronize command/response pairs GLOBALLY
 
 	// Track expected response for validation
 	expectedSlaveID      uint8
 	expectedFunctionCode uint8
+	requestCounter       uint64 // Unique ID for each request
+	expectedRequestID    uint64 // Expected request ID for current response
+
+	// Per-slave mutexes to allow parallel requests to different slaves
+	slaveMutexes map[uint8]*sync.Mutex
+	slaveMu      sync.Mutex // Protect slaveMutexes map
 }
 
 // NewUSRGateway creates a new USR-DR164 gateway
@@ -42,6 +48,7 @@ func NewUSRGateway(cfg *config.MQTTConfig) *USRGateway {
 	gateway := &USRGateway{
 		config:       cfg,
 		responseChan: make(chan []byte, 10),
+		slaveMutexes: make(map[uint8]*sync.Mutex),
 	}
 
 	// Connection status callbacks
@@ -351,25 +358,41 @@ func (g *USRGateway) SendDiagnosticCommand(ctx context.Context) error {
 	}
 }
 
+// getSlaveMutex returns or creates a mutex for the given slave ID
+func (g *USRGateway) getSlaveMutex(slaveID uint8) *sync.Mutex {
+	g.slaveMu.Lock()
+	defer g.slaveMu.Unlock()
+
+	if _, exists := g.slaveMutexes[slaveID]; !exists {
+		g.slaveMutexes[slaveID] = &sync.Mutex{}
+	}
+	return g.slaveMutexes[slaveID]
+}
+
 // SendCommandAndWaitForResponse sends a command and waits for response atomically
-// This prevents racing conditions between multiple commands and ensures SEQUENTIAL execution
+// This prevents racing conditions between multiple commands and ensures PER-SLAVE sequential execution
 //
-// CRITICAL: This method uses commandMutex to ensure:
-// 1. Only ONE Modbus transaction at a time (no overlap between slaves/groups)
+// CRITICAL: This method uses PER-SLAVE mutex to ensure:
+// 1. Only ONE Modbus transaction per slave at a time (slaves can run in parallel)
 // 2. Each request gets its CORRECT response (validated by SlaveID + FunctionCode)
 // 3. Stale responses from timed-out requests are cleared before new requests
 //
 // Execution flow:
 //
-//	Lock commandMutex → Clear stale responses → Set expected response params →
+//	Lock slaveMutex[slaveID] → Clear stale responses → Set expected response params →
 //	Send command → Wait for matching response → Unlock → 50ms delay
 //
-// This guarantees that register groups from different slaves (e.g., Slave 1 and Slave 11)
-// are executed SEQUENTIALLY and cannot interfere with each other.
+// This allows register groups from DIFFERENT slaves (e.g., Slave 1 and Slave 11)
+// to execute IN PARALLEL, while ensuring groups on the SAME slave remain sequential.
 func (g *USRGateway) SendCommandAndWaitForResponse(ctx context.Context, slaveID uint8, functionCode uint8, address uint16, count uint16, timeoutSeconds int) ([]byte, error) {
-	// Lock to ensure only one command/response cycle at a time
+	// Get per-slave mutex to allow parallel requests to different slaves
+	slaveMutex := g.getSlaveMutex(slaveID)
+	slaveMutex.Lock()
+	defer slaveMutex.Unlock()
+
+	// CRITICAL: Lock commandMutex only during channel access to prevent race conditions
+	// This ensures response channel is accessed atomically but allows parallel slave requests
 	g.commandMutex.Lock()
-	defer g.commandMutex.Unlock()
 
 	// Clear any stale responses from channel before sending new command
 	// This prevents receiving old responses for new requests
@@ -380,9 +403,19 @@ func (g *USRGateway) SendCommandAndWaitForResponse(ctx context.Context, slaveID 
 		// Channel is empty, good to go
 	}
 
+	// Increment request counter for this new request
+	g.requestCounter++
+	currentRequestID := g.requestCounter
+
 	// Set expected response parameters for validation in onMessage
 	g.expectedSlaveID = slaveID
 	g.expectedFunctionCode = functionCode
+	g.expectedRequestID = currentRequestID
+
+	logger.LogDebug("🆔 Request #%d: Slave %d, FC 0x%02X", currentRequestID, slaveID, functionCode)
+
+	// Release commandMutex to allow other slaves to send commands in parallel
+	g.commandMutex.Unlock()
 
 	// Send command
 	if err := g.SendCommand(ctx, slaveID, functionCode, address, count); err != nil {
@@ -393,24 +426,30 @@ func (g *USRGateway) SendCommandAndWaitForResponse(ctx context.Context, slaveID 
 	response, err := g.WaitForResponse(ctx, timeoutSeconds)
 
 	if err != nil {
+		logger.LogWarn("⏱️ Request #%d: Timeout after %ds", currentRequestID, timeoutSeconds)
+
 		// CRITICAL: After timeout, clear any stale response that might arrive late
-		// Do this SYNCHRONOUSLY before releasing mutex to prevent next request
-		// from consuming this stale response
-		//
+		// Re-lock commandMutex to safely access response channel
+		g.commandMutex.Lock()
+
 		// Small delay to allow onMessage() to process any fragments that arrived
 		// just before timeout expired
 		time.Sleep(50 * time.Millisecond)
 
 		select {
 		case staleResp := <-g.responseChan:
-			logger.LogWarn("⚠️ Discarded late response after timeout: %d bytes from potential Slave %d",
-				len(staleResp), g.expectedSlaveID)
+			logger.LogWarn("⚠️ Request #%d: Discarded late response: %d bytes from Slave %d",
+				currentRequestID, len(staleResp), g.expectedSlaveID)
 		default:
 			// No stale response in channel
+			logger.LogDebug("✅ Request #%d: Channel clean after timeout", currentRequestID)
 		}
 
+		g.commandMutex.Unlock()
 		return nil, err
 	}
+
+	logger.LogDebug("✅ Request #%d: Success (%d bytes)", currentRequestID, len(response))
 
 	// Add small delay between commands to prevent gateway overload
 	time.Sleep(50 * time.Millisecond)
