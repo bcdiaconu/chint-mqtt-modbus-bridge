@@ -16,6 +16,7 @@ type GroupScheduler struct {
 	groupIntervals   map[string]time.Duration // groupKey -> poll interval
 	lastExecutions   map[string]time.Time     // groupKey -> last execution time
 	mu               sync.RWMutex             // Protect maps
+	executionMutex   sync.Mutex               // Ensures only one group executes at a time (prevents concurrent Modbus requests)
 	minCheckInterval time.Duration            // How often to check for groups that need execution
 }
 
@@ -104,6 +105,11 @@ func (s *GroupScheduler) checkAndExecuteGroups(ctx context.Context, callback fun
 
 // executeGroup executes a single register group
 func (s *GroupScheduler) executeGroup(ctx context.Context, groupKey string, callback func(context.Context, map[string]*modbus.CommandResult)) {
+	// CRITICAL: Lock to ensure only one group executes at a time
+	// This prevents concurrent Modbus requests that would cause race conditions
+	s.executionMutex.Lock()
+	defer s.executionMutex.Unlock()
+
 	startTime := time.Now()
 
 	logger.LogTrace("🔄 Executing group '%s'...", groupKey)

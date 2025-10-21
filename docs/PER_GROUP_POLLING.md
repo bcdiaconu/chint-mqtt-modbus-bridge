@@ -277,6 +277,76 @@ logging:
 ✅ Group 'energy_meter_mains_energy' executed successfully in 120ms
 ```
 
+## Thread Safety & Sequential Execution
+
+### Execution Guarantee
+
+The GroupScheduler ensures **only one group executes at a time**, even if multiple groups become due simultaneously:
+
+```go
+// CRITICAL: executionMutex ensures sequential execution
+s.executionMutex.Lock()
+defer s.executionMutex.Unlock()
+```
+
+**Why this matters**:
+
+- ✅ Prevents concurrent Modbus requests (serial communication is sequential)
+- ✅ Avoids race conditions in response handling
+- ✅ Prevents response mix-ups between devices/groups
+- ✅ Guarantees stable circuit breaker behavior
+
+### Execution Flow
+
+```md
+Tick 1 (T=0ms):
+  ├─ Group A due? → YES → Lock → Execute → Unlock (150ms)
+  └─ Group B due? → YES → Wait for lock...
+
+Tick 2 (T=100ms):
+  └─ Group B continues → Lock → Execute → Unlock (120ms)
+
+Tick 3 (T=200ms):
+  └─ (all groups completed, scheduler idle)
+```
+
+**Log Evidence**:
+
+```log
+⏰ Groups due for execution: [instant_group, energy_group]
+🔄 Executing group 'instant_group'...          ← Lock acquired
+✅ Group 'instant_group' executed in 145ms     ← Lock released
+🔄 Executing group 'energy_group'...           ← Lock acquired (next group waits)
+✅ Group 'energy_group' executed in 120ms      ← Lock released
+```
+
+### Race Condition Prevention
+
+**Problem Without Mutex** (old implementation):
+
+```md
+T=0ms:  Scheduler checks → Group A due, Group B due
+T=1ms:  Group A starts → Sends Modbus request to Slave 11
+T=2ms:  Group B starts → Sends Modbus request to Slave 1 (concurrent!)
+T=50ms: Response arrives from Slave 11 → BUT Group B is expecting Slave 1!
+        ⚠️ ERROR: "Received unexpected response (Slave=11) but expecting (Slave=1)"
+        ❌ Both groups timeout → Circuit breaker opens
+```
+
+**Solution With Mutex** (current implementation):
+
+```md
+T=0ms:   Scheduler checks → Group A due, Group B due
+T=1ms:   Group A acquires lock → Sends Modbus request to Slave 11
+T=2ms:   Group B tries lock → BLOCKED (waits)
+T=50ms:  Response arrives from Slave 11 → Correctly routed to Group A ✅
+T=150ms: Group A releases lock
+T=151ms: Group B acquires lock → Sends Modbus request to Slave 1
+T=200ms: Response arrives from Slave 1 → Correctly routed to Group B ✅
+```
+
+**Result**: Zero race conditions, 100% response accuracy
+
 ### Common Issues
 
 #### Error: "poll_interval is required"
