@@ -391,9 +391,16 @@ func (g *USRGateway) SendCommandAndWaitForResponse(ctx context.Context, slaveID 
 
 	// Wait for response
 	response, err := g.WaitForResponse(ctx, timeoutSeconds)
+
+	// Add small delay between commands to prevent gateway overload
+	time.Sleep(50 * time.Millisecond)
+
 	if err != nil {
 		// CRITICAL: After timeout, clear any stale response that might arrive late
 		// Otherwise it will be consumed by the next request, causing race conditions
+		//
+		// NOTE: We do this AFTER the delay to give onMessage() time to process
+		// any pending fragments that arrived just before timeout
 		go func() {
 			select {
 			case staleResp := <-g.responseChan:
@@ -405,9 +412,6 @@ func (g *USRGateway) SendCommandAndWaitForResponse(ctx context.Context, slaveID 
 		}()
 		return nil, err
 	}
-
-	// Add small delay between commands to prevent gateway overload
-	time.Sleep(50 * time.Millisecond)
 
 	return response, nil
 }
