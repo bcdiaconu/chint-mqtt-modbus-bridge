@@ -392,26 +392,28 @@ func (g *USRGateway) SendCommandAndWaitForResponse(ctx context.Context, slaveID 
 	// Wait for response
 	response, err := g.WaitForResponse(ctx, timeoutSeconds)
 
-	// Add small delay between commands to prevent gateway overload
-	time.Sleep(50 * time.Millisecond)
-
 	if err != nil {
 		// CRITICAL: After timeout, clear any stale response that might arrive late
-		// Otherwise it will be consumed by the next request, causing race conditions
+		// Do this SYNCHRONOUSLY before releasing mutex to prevent next request
+		// from consuming this stale response
 		//
-		// NOTE: We do this AFTER the delay to give onMessage() time to process
-		// any pending fragments that arrived just before timeout
-		go func() {
-			select {
-			case staleResp := <-g.responseChan:
-				logger.LogWarn("⚠️ Discarded late response after timeout: %d bytes from potential Slave %d",
-					len(staleResp), g.expectedSlaveID)
-			case <-time.After(2 * time.Second):
-				// No late response arrived within 2s, safe to proceed
-			}
-		}()
+		// Small delay to allow onMessage() to process any fragments that arrived
+		// just before timeout expired
+		time.Sleep(50 * time.Millisecond)
+
+		select {
+		case staleResp := <-g.responseChan:
+			logger.LogWarn("⚠️ Discarded late response after timeout: %d bytes from potential Slave %d",
+				len(staleResp), g.expectedSlaveID)
+		default:
+			// No stale response in channel
+		}
+
 		return nil, err
 	}
+
+	// Add small delay between commands to prevent gateway overload
+	time.Sleep(50 * time.Millisecond)
 
 	return response, nil
 }
